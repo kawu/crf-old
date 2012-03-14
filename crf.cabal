@@ -1,0 +1,34 @@
+Name:               crf
+Version:            0.0.0
+Synopsis:           Conditional random fields library.
+License:            BSD3
+License-file:       LICENSE
+Author:             Jakub Waszczuk
+Maintainer:         waszczuk.kuba@gmail.com
+Build-type:         Simple
+Exposed-modules:    Data.CRF.Model
+                    Data.CRF.Codec
+                    Data.CRF.Feature
+                    Data.CRF.Gradient
+                    Data.CRF.InOut
+                    Data.CRF.XRYs
+                    Data.CRF.Types
+Other-modules:      Data.CRF.Const
+                    Data.CRF.Model.Internal
+                    Data.CRF.LogMath
+                    Data.CRF.Util
+                    Data.CRF.Vector.Binary
+                    Data.CRF.Control.DynamicProgramming
+Build-Depends:      base
+                  , primitive
+                  , containers
+                  , vector
+                  , array
+                  , ListLike
+                  , listlike-instances
+                  , random
+		  , parallel
+                  , binary
+                  , data-memocombinators
+                  , text
+                  , sgd == 0.0.0
