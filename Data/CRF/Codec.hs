@@ -58,22 +58,22 @@ instance (Ord a, Binary a) => Binary (Codec a) where
 empty :: Codec a
 empty = Codec M.empty M.empty M.empty
 
-updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
-updateMap mp x =
+updateMap :: Ord a => Int -> M.Map a Int -> a -> M.Map a Int
+updateMap shift mp x =
   case M.lookup x mp of
     Just k -> mp
     Nothing -> M.insert x n mp
   where
-    !n = M.size mp
+    !n = M.size mp + shift
 
 updateO :: Ord a => Codec a -> a -> Codec a
 updateO codec x =
-    let oMap' = updateMap (oMap codec) x
+    let oMap' = updateMap 0 (oMap codec) x
     in  oMap' `seq` codec { oMap = oMap' }
 
 updateL :: Ord a => Codec a -> a -> Codec a
 updateL codec x =
-    let lMap' = updateMap (lMap codec) x
+    let lMap' = updateMap 1 (lMap codec) x
         lRevMap' = M.insert (lMap' M.! x) x (lRevMap codec)
     in  lMap' `seq` lRevMap' `seq`
         Codec (oMap codec) lMap' lRevMap'

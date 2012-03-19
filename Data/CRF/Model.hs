@@ -32,7 +32,6 @@ import Data.CRF.Const (dummy)
 import Data.CRF.Feature
 import Data.CRF.Model.Internal
 
-type LabelIx = Int  -- index of label
 type ProbArray = Int -> Lb -> Double
 type AccF = [Double] -> Double
 
@@ -65,7 +64,7 @@ type AccF = [Double] -> Double
 -- | TODO: Change to Vector.
 computePsiMem :: Sent s => Model -> s -> Int -> Lb -> Double
 computePsiMem crf sent i = (Array.!) $ Array.accumArray (+) 0.0 bounds
-    [ (lb, values crf ! ix
+    [ (lb, values crf ! ix)
     | ob <- sent `obsOn` i
     , (lb, ix) <- L.toList $ obIxs crf ! ob ]
   where
@@ -133,9 +132,10 @@ dynamicTag crf sent = collectMaxArg (0, 0) [] mem where
                        (\t k -> withMem (computePsiMem crf sent k) t k)
     withMem psiMem mem k x
         | k == sentLen sent = (-1, 0.0)
-        | otherwise = argmax eval $ L.toList $ nextIxs crf ! x
+        | otherwise = prune $ argmax eval $ L.toList $ nextIxs crf ! x
       where
         eval (y, ix) = (snd $ mem (k + 1) y) + psiMem y + values crf ! ix
+        prune ((y, ix), v) = (y, v)
     collectMaxArg (i, j) acc mem =
         collect $ mem i j
       where
@@ -230,12 +230,12 @@ prob2 crf alpha beta sent k psiMem x y ix
 --     [ prob2 crf alpha beta sent k x y
 --     | y <- interpIxs sent (k - 1) ]
 
-prob1 :: SentR s => Model -> ProbArray -> ProbArray -> s -> Int -> Lb -> Double
+prob1 :: Sent s => Model -> ProbArray -> ProbArray -> s -> Int -> Lb -> Double
 prob1 crf alpha beta sent k x =
     alpha k x + beta (k + 1) x - zxBeta beta
 
-expectedFeaturesOn :: SentR s => Model -> ProbArray -> ProbArray -> s
-                   -> Int -> [(Feature, Double)]
+expectedFeaturesOn :: Sent s => Model -> ProbArray -> ProbArray -> s
+                   -> Int -> [(FeatIx, Double)]
 expectedFeaturesOn crf alpha beta sent k =
     fs2 ++ fs1
   where
@@ -243,22 +243,22 @@ expectedFeaturesOn crf alpha beta sent k =
     pr1 = prob1 crf alpha beta sent k
     pr2 = prob2 crf alpha beta sent k psiMem
 
-    forIx = interp sent k
-    forIy = interp sent $ k - 1
+--     forIx = interp sent k
+--     forIy = interp sent $ k - 1
 
 --     fs1 = [ (OFeature o (forIx x), pr1 x) 
 --           | x <- interpIxs sent k
 --           , o <- L.toList $ observationsOn sent k ]
-    fs1 = [ (OFeature o x, pr1 x) 
+    fs1 = [ (ix, pr1 x) 
           | o <- sent `obsOn` k
           , (x, ix) <- L.toList $ obIxs crf ! o ]
 --     fs2 = [ (TFeature (forIx x) (forIy y), pr2 x y) 
 --           | (x, y) <- interpIxs2 sent k ]
-    fs2 = [ (TFeature x y, pr2 x y ix) 
+    fs2 = [ (ix, pr2 x y ix) 
           | x <- [0 .. labelNum crf - 1]
           , (y, ix) <- L.toList $ prevIxs crf ! x ]
 
-expectedFeaturesIn :: SentR s => Model -> s -> [(Feature, Double)]
+expectedFeaturesIn :: Sent s => Model -> s -> [(FeatIx, Double)]
 expectedFeaturesIn crf sent =
     -- force parallel computation of alpha and beta tables
     zx1 `par` zx2 `pseq` zx1 `pseq` concat

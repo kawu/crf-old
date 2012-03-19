@@ -1,51 +1,60 @@
 module Data.CRF.Model.Internal
-( Model
+( Model (..)
 -- , fromList
 -- , toList
-, makeModel
-, onOFeat
-, onTFeat
+, mkModel
 , featToIx
+, FeatIx
 ) where
 
 -- import Control.Monad (forM_)
 -- import Data.Maybe (fromJust)
 -- import Data.Ix (range, inRange, rangeSize)
 -- 
--- import qualified Data.Set as Set
 -- import qualified Data.Array as A
 -- import qualified Data.Array.IO as A
 -- import qualified Data.Array.MArray as A
 -- import qualified Data.Array.Unboxed as UA
 -- import qualified Data.IntMap as IM
--- import qualified Data.Vector.Unboxed as U
--- 
--- import Data.Binary
 -- 
 -- import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, forkIO)
 -- 
--- import SGD
 -- 
 -- import Data.CRF.Types
 -- import Data.CRF.Feature
 -- import Data.CRF.LogMath
--- import Data.CRF.Vector.Binary
+
+import           Data.List (groupBy, sort)
+import           Data.Function (on)
+import qualified Data.Set as Set
+import qualified Data.Map as M
+import qualified Data.ListLike as L
+import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector as V
+import           Data.Binary
+
+import           SGD
 
 import           Data.CRF.Base
+import           Data.CRF.Feature
+import           Data.CRF.Vector.Binary
 
-type ValIx = Int
-type LbIx  = (Lb, ValIx)
+type FeatIx = Int
+type LbIx   = (Lb, FeatIx)
 
 data Model = Model
-    -- | Set of all labels present in data set == [0 .. labelNum - 1].
-    { labelNum  :: Int
---     , obIxs     :: A.Array Ob (IM.IntMap ValIx)
+    -- | Model values.
+    { values    :: U.Vector Double
+    -- | Indices map.
+    , ixMap     :: M.Map Feature FeatIx
+    -- | Number of labels.
+    , labelNum  :: Int
+    -- | Set of acceptable labels when known value of the observation.
     , obIxs     :: V.Vector (U.Vector LbIx)
-    -- | Set of "previous" indices when known value of the current label.
+    -- | Set of "previous" labels when known value of the current label.
     , prevIxs   :: V.Vector (U.Vector LbIx)
-    -- | Set of "next" indices when known value of the current label.
-    , nextIxs   :: V.Vector (U.Vector LbIx)
-    , values    :: U.Vector Double }
+    -- | Set of "next" labels when known value of the current label.
+    , nextIxs   :: V.Vector (U.Vector LbIx) }
 
 instance ParamCore Model where
 
@@ -59,38 +68,22 @@ instance ParamCore Model where
 
     size = size . values
 
--- -- | Acceptable "previous" labels when known value of the current label.
--- prevInterpIxs :: Sent s => Model -> Label -> s -> Int -> [Int]
--- prevInterpIxs crf a sent k = prevIxs crf V.! a
--- --   where
--- --     xs  = interpsOn sent k
--- --     xs' = prevLs crf V.! a
--- 
--- -- | Acceptable "next" labels when known value of the current label.
--- -- FIXME: use the interpsOn information!
--- nextInterpIxs :: SentR s => Model -> Label -> s -> Int -> [Int]
--- nextInterpIxs crf a sent k = nextIxs crf V.! a
--- 
--- pairInterpIxs :: SentR s => Model -> s -> Int -> [(Int, Int)]
--- pairInterpIxs crf sent k =
---     [ (i, j)
---     | (a, i) <- zip (interpsOn sent k) [0..]
---     , j <- prevInterpIxs crf a sent k ]
-
 instance Binary Model where
     put crf = do
+        put $ values crf
+        put $ ixMap crf
         put $ labelNum crf
         put $ obIxs crf
         put $ prevIxs crf
         put $ nextIxs crf
-        put $ values crf
     get = do
+        values <- get
+        ixMap <- get
         labelNum <- get
         obIxs <- get
         prevIxs <- get
         nextIxs <- get
-        values <- get
-        return $ Model labelNum obIxs prevIxs nextIxs values
+        return $ Model values ixMap labelNum obIxs prevIxs nextIxs
 
 -- instance Show Model where
 --     show = unlines . map show . toList
@@ -114,81 +107,60 @@ fromList fs =
         featLabels (TFeature x y) = [x, y]
         featObs (OFeature o _) = [o]
         featObs _ = []
+
+        ixMap = M.fromList $ zip (map fst fs) [0..]
     
-        labels = Set.toList $ Set.fromList
-               $ concat $ map featLabels $ map fst fs
-        lmax = maximum labels
+        lmax = maximum $ Set.toList $ Set.fromList
+             $ concat $ map featLabels $ map fst fs
         omax = maximum $ concat $ map featObs $ map fst fs
 
-        trsFeats = [feat | (feat, val) <- fs, isTFeat feat]
-        obsFeats = [feat | (feat, val) <- fs, isOFeat feat]
+        tFeats = [feat | (feat, val) <- fs, isTFeat feat]
+        oFeats = [feat | (feat, val) <- fs, isOFeat feat]
 
-        -- TODO: Brać pod uwagę *wprost* etykiety unknown, dummy.
-        -- ==================================================================================================================================================================================================================================================================== TUTAJ SKONCZYLES !
-        transIxs = UA.array ((-1, -1), (lmax, lmax))
-            [ ((x, y), ix)
-            | (TFeature x y, ix) <- zip trsFeats [0..] ]
+        prevIxs = adjVects
+            [ (x, (y, featToIx crf feat))
+            | feat@(TFeature x y) <- tFeats ]
 
-        obvsIxs = A.array (1, omax)
-            [ (o, IM.fromList [])
-            | o <- [1 .. omax] ]
-          A.//
-            [ (o, IM.fromList
-                [ (x, ix)
-                | (OFeature _ x, ix) <- fs ])
-            | (o, fs) <- groupObsFeatures obsFeats' ]
+        nextIxs = adjVects
+            [ (y, (x, featToIx crf feat))
+            | feat@(TFeature x y) <- tFeats ]
+
+        obIxs = adjVects
+            [ (o, (x, featToIx crf feat))
+            | feat@(OFeature o x) <- oFeats ]
+
+        -- | Adjacency vectors.
+        adjVects =
+            L.fromList . map mkVect . groupBy ((==) `on` fst) . sort
           where
-            obsFeats' = zip obsFeats [length trsFeats ..]
-
-        groupObsFeatures fs = IM.toList $
-            IM.fromListWith (++) 
-                [ (o, [(feat, ix)])
-                | (feat@(OFeature o _), ix) <- fs ]
+            mkVect = L.fromList . sort . map snd
 
         values =
             U.replicate (length fs) 0.0
           U.//
-            [(featToIx feat model, val) | (feat, val) <- fs]
+            [(featToIx crf feat, val) | (feat, val) <- fs]
 
-        model = Model
-            { transIxs = transIxs
-            , obvsIxs = obvsIxs
-            , values = values }
-    in model
+        crf = Model values ixMap (lmax + 1) obIxs prevIxs nextIxs
+    in  crf
 
-makeModel :: [Feature] -> Model
-makeModel fs =
+mkModel :: [Feature] -> Model
+mkModel fs =
     let fSet = Set.fromList fs
         fs'  = Set.toList fSet
         vs   = replicate (Set.size fSet) 0.0
     in  fromList (zip fs' vs)
 
-oFeatToIx :: Obser -> Label -> Model -> Maybe Int
-oFeatToIx o x crf =
-    let obsMap = obvsIxs crf A.! o
-    in  IM.lookup x obsMap
+featToIx :: Model -> Feature -> FeatIx
+featToIx crf feat = ixMap crf M.! feat
 
--- TODO: dodac wersja 'unsafe' -- zmiana może być kluczowa
--- dla szybkości działania.
-tFeatToIx :: Label -> Label -> Model -> Maybe Int
-tFeatToIx x y crf =
-    case inRange (UA.bounds $ transIxs crf) (x, y) of
-        True    -> Just $ transIxs crf UA.! (x, y)
-        False   -> Nothing
-
-featToIx :: Feature -> Model -> Int
-featToIx feat crf = fromJust $ case feat of
-    TFeature x y -> tFeatToIx x y crf
-    OFeature o x -> oFeatToIx o x crf
-
-onOFeat :: Obser -> Label -> Model -> Double
-onOFeat o x crf =
-    case oFeatToIx o x crf of
-        Just ix -> values crf U.! ix
-        Nothing -> 0.0
-
-onTFeat :: Label -> Label -> Model -> Double
-onTFeat x y crf =
-    case tFeatToIx x y crf of
-        Just ix -> values crf U.! ix
-        Nothing -> 0.0
+-- onOFeat :: Obser -> Label -> Model -> Double
+-- onOFeat o x crf =
+--     case oFeatToIx o x crf of
+--         Just ix -> values crf U.! ix
+--         Nothing -> 0.0
+-- 
+-- onTFeat :: Label -> Label -> Model -> Double
+-- onTFeat x y crf =
+--     case tFeatToIx x y crf of
+--         Just ix -> values crf U.! ix
+--         Nothing -> 0.0

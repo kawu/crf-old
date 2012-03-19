@@ -7,6 +7,8 @@ module Data.CRF.Feature
 ) where
 
 import qualified Data.ListLike as L
+import           Data.Binary (Binary, Get, put, get)
+import           Control.Applicative ((<*>), (<$>))
 
 import Data.CRF.Base
 
@@ -20,6 +22,16 @@ import Data.CRF.Base
 data Feature = TFeature !Lb !Lb
              | OFeature !Ob !Lb
 	     deriving (Show, Read, Eq, Ord)
+
+instance Binary Feature where
+    put (TFeature x y) = put (0 :: Int) >> put (x, y)
+    put (OFeature o x) = put (1 :: Int) >> put (o, x)
+    get = do
+        k <- get :: Get Int
+        (a, b) <- (,) <$> get <*> get
+        return $ if k == 0
+            then TFeature a b
+            else OFeature a b
 
 isOFeat :: Feature -> Bool
 isOFeat (OFeature _ _) = True
