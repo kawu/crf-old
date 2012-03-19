@@ -43,8 +43,8 @@ type XRYs = (Xs, Rs, Ys)
 
 instance Sent Xs where
     observationsOn xs k
-        | k < 0 || k >= length xs  = fromList []
-        | otherwise             = index xs k
+        | k < 0 || k >= length xs   = fromList []
+        | otherwise                 = index xs k
     sentLen = length
 
 instance Sent XRs where
@@ -53,8 +53,8 @@ instance Sent XRs where
 
 instance SentR XRs where
     interpsOn (_, rs) k
-        | k < 0 || k >= length rs  = fromList [dummy]
-        | otherwise             = index rs k
+        | k < 0 || k >= length rs   = fromList [dummy]
+        | otherwise                 = index rs k
 
 instance Sent XRYs where
     observationsOn (xs, _,  _) = observationsOn xs
@@ -65,85 +65,85 @@ instance SentR XRYs where
 
 instance SentM XRYs where
     choiceOn (_, _, ys) k
-        | k < 0 || k >= length ys  = fromList [(dummy, 1.0)]
-        | otherwise             = index ys k
+        | k < 0 || k >= length ys   = fromList [(dummy, 1.0)]
+        | otherwise                 = index ys k
 
--- TODO: dodac w ponizszych asercje:
--- * rs \subseteq allLabels
--- * ys \subseteq allLabels
--- * ys \subseteq rs
--- * !WAZNE! allLabels \subset [1..] (0 stanowi specjalną etykiete 'dummy';
---   można zmienić założenia, tak żeby normalne etykiety zaczynaly sie od 0)
--- * Analogicznie, obvs \subset [1..] 
-
--- | Assumption: lMin = 1, oMin = 1
-data Config = Config
-    { allLabels :: R  -- Set of all labels
-    , lMax :: Int       -- Maximal label id
-    , oMax :: Int }     -- Maximal observation id
-
-instance Binary Config where
-    put cfg = do
-        put $ toList $ allLabels cfg
-        put $ lMax cfg
-        put $ oMax cfg
-    get = do
-        allLabels <- fromList <$> get
-        lMax <- get
-        oMax <- get
-        return Config { allLabels = allLabels, lMax = lMax, oMax = oMax }
-
-mkConfig :: C.Codec Int -> IO Config
-mkConfig codec = do
-    when (lMin < 1) (fail "lMin < 1")
-    when (oMin < 1) (fail "oMin < 1")
-    return config
-  where
-    labels = M.keys $ C.lMap codec
-    observations = M.keys $ C.oMap codec
-    lMin = minimum labels
-    oMin = minimum observations
-    config = Config
-        { allLabels = fromList $ labels
-        , lMax = maximum labels
-        , oMax = maximum observations }
-
-mkXRs :: Config -> I.SentR Int -> XRs
-mkXRs cfg sent = (xs, rs)
-  where
-    xs = fromList2
-        [ filterO obvs
-        | I.WordR obvs _ <- sent ]
-    rs = fromList
-        [ if null labels
-            then allLabels cfg
-            else fromList $ filterL labels
-        | I.WordR _ labels <- sent ]
-
-    -- TODO: wartosc 0 zakodowana na sztywno ! da sie cos z tym zrobic ?
-    filterO = filter $ \x -> x < oMax cfg && x > 0
-    filterL = map $ \x -> if x < lMax cfg && x > 0
-        then unknown
-        else x
-
-mkXRYs :: Config -> I.SentRM Int -> XRYs
-mkXRYs cfg sent = (xs, rs, ys)
-  where
-    xs = fromList2
-        [ filterO obvs
-        | I.WordRM obvs _ _ <- sent ]
-    rs = fromList
-        [ if null labels
-            then allLabels cfg
-            else fromList $ filterL labels
-        | I.WordRM _ labels _ <- sent ]
-    ys = fromList2 [choices | I.WordRM _ _ choices <- sent]
-
-    -- TODO: wartosc 0 zakodowana na sztywno ! da sie cos z tym zrobic ?
-    filterO = filter $ \x -> x < oMax cfg && x > 0
-    filterL = map $ \x -> if x < lMax cfg && x > 0
-        then unknown
-        else x
-
-fromList2 :: (ListLike w v, ListLike v x) => [[x]] -> w
-fromList2 = fromList . map fromList
+-- -- TODO: dodac w ponizszych asercje:
+-- -- * rs \subseteq allLabels
+-- -- * ys \subseteq allLabels
+-- -- * ys \subseteq rs
+-- -- * !WAZNE! allLabels \subset [1..] (0 stanowi specjalną etykiete 'dummy';
+-- --   można zmienić założenia, tak żeby normalne etykiety zaczynaly sie od 0)
+-- -- * Analogicznie, obvs \subset [1..] 
+-- 
+-- -- | Assumption: lMin = 1, oMin = 1
+-- data Config = Config
+--     { allLabels :: R  -- Set of all labels
+--     , lMax :: Int       -- Maximal label id
+--     , oMax :: Int }     -- Maximal observation id
+-- 
+-- instance Binary Config where
+--     put cfg = do
+--         put $ toList $ allLabels cfg
+--         put $ lMax cfg
+--         put $ oMax cfg
+--     get = do
+--         allLabels <- fromList <$> get
+--         lMax <- get
+--         oMax <- get
+--         return Config { allLabels = allLabels, lMax = lMax, oMax = oMax }
+-- 
+-- mkConfig :: C.Codec Int -> IO Config
+-- mkConfig codec = do
+--     when (lMin < 1) (fail "lMin < 1")
+--     when (oMin < 1) (fail "oMin < 1")
+--     return config
+--   where
+--     labels = M.keys $ C.lMap codec
+--     observations = M.keys $ C.oMap codec
+--     lMin = minimum labels
+--     oMin = minimum observations
+--     config = Config
+--         { allLabels = fromList $ labels
+--         , lMax = maximum labels
+--         , oMax = maximum observations }
+-- 
+-- mkXRs :: Config -> I.SentR Int -> XRs
+-- mkXRs cfg sent = (xs, rs)
+--   where
+--     xs = fromList2
+--         [ filterO obvs
+--         | I.WordR obvs _ <- sent ]
+--     rs = fromList
+--         [ if null labels
+--             then allLabels cfg
+--             else fromList $ filterL labels
+--         | I.WordR _ labels <- sent ]
+-- 
+--     -- TODO: wartosc 0 zakodowana na sztywno ! da sie cos z tym zrobic ?
+--     filterO = filter $ \x -> x < oMax cfg && x > 0
+--     filterL = map $ \x -> if x < lMax cfg && x > 0
+--         then unknown
+--         else x
+-- 
+-- mkXRYs :: Config -> I.SentRM Int -> XRYs
+-- mkXRYs cfg sent = (xs, rs, ys)
+--   where
+--     xs = fromList2
+--         [ filterO obvs
+--         | I.WordRM obvs _ _ <- sent ]
+--     rs = fromList
+--         [ if null labels
+--             then allLabels cfg
+--             else fromList $ filterL labels
+--         | I.WordRM _ labels _ <- sent ]
+--     ys = fromList2 [choices | I.WordRM _ _ choices <- sent]
+-- 
+--     -- TODO: wartosc 0 zakodowana na sztywno ! da sie cos z tym zrobic ?
+--     filterO = filter $ \x -> x < oMax cfg && x > 0
+--     filterL = map $ \x -> if x < lMax cfg && x > 0
+--         then unknown
+--         else x
+-- 
+-- fromList2 :: (ListLike w v, ListLike v x) => [[x]] -> w
+-- fromList2 = fromList . map fromList

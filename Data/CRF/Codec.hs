@@ -1,3 +1,8 @@
+{-# LANGUAGE MultiParamTypeClasses
+           , FlexibleInstances
+           , UndecidableInstances
+           , FunctionalDependencies #-}
+
 module Data.CRF.Codec
 ( Codec (..)
 , fromWords
@@ -10,13 +15,24 @@ module Data.CRF.Codec
 
 import qualified Data.Map as M
 import qualified Data.Text as T
--- import qualified Data.Text.IO as T
 import qualified Data.Text.Encoding as T
-import Data.Binary (Binary, put, get)
-import Data.List (foldl')
+import           Data.Binary (Binary, put, get)
+import           Data.List (foldl')
+import           Data.ListLike (ListLike, fromList, toList)
 
 import qualified Data.CRF.Const as Const
-import Data.CRF.InOut
+import           Data.CRF.Base (X, Y, Xs, XYs)
+
+
+class HasObs w t | w -> t where
+    obs :: w -> [t]
+
+class HasChoice w t | w -> t where
+    choice :: w -> [(t, Double)]
+
+class (HasChoice w t, HasObs w t) => IsWord w t where
+instance (HasChoice w t, HasObs w t) => IsWord w t where
+
 
 instance Binary T.Text where
     put = put . T.encodeUtf8
@@ -37,41 +53,39 @@ instance (Ord a, Binary a) => Binary (Codec a) where
         oMap <- get
         lMap <- get
         lRevMap <- get
-        return Codec { oMap = oMap, lMap = lMap, lRevMap = lRevMap }
+        return $ Codec oMap lMap lRevMap
 
 empty :: Codec a
-empty = Codec { oMap = M.empty, lMap = M.empty, lRevMap = M.empty }
+empty = Codec M.empty M.empty M.empty
 
-updateMap :: (Ord a) => M.Map a Int -> a -> M.Map a Int
+updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
 updateMap mp x =
   case M.lookup x mp of
     Just k -> mp
     Nothing -> M.insert x n mp
   where
-    !n = M.size mp + 1
+    !n = M.size mp
 
 updateO :: Ord a => Codec a -> a -> Codec a
 updateO codec x =
     let oMap' = updateMap (oMap codec) x
-    in  oMap' `seq`
-        Codec {oMap=oMap', lMap=lMap codec, lRevMap=lRevMap codec}
+    in  oMap' `seq` codec { oMap = oMap' }
 
 updateL :: Ord a => Codec a -> a -> Codec a
 updateL codec x =
     let lMap' = updateMap (lMap codec) x
         lRevMap' = M.insert (lMap' M.! x) x (lRevMap codec)
     in  lMap' `seq` lRevMap' `seq`
-        Codec {oMap=oMap codec, lMap=lMap', lRevMap=lRevMap'}
+        Codec (oMap codec) lMap' lRevMap'
 
-update :: Ord a => Codec a -> WordRM a -> Codec a
-update codec0 (WordRM obvs rs ys) = codec2
+update :: (IsWord w a, Ord a) => Codec a -> w -> Codec a
+update codec0 word =
+    codec2
   where
-    labels = rs ++ [y | (y, _) <- ys]
-    codec1 = foldl' updateO codec0 obvs
-    codec2 = foldl' updateL codec1 labels
+    codec1 = foldl' updateO codec0 (obs word)
+    codec2 = foldl' updateL codec1 [y | (y, _) <- choice word]
 
--- TODO: Powinny byc rozrozniane wartosci unknownLabel i unknownObv ?
-encodeWith :: (Ord a) => a -> M.Map a Int -> Int
+encodeWith :: Ord a => a -> M.Map a Int -> Int
 encodeWith x mp = case M.lookup x mp of
     Just k -> k
     Nothing -> Const.unknown
@@ -85,18 +99,22 @@ encodeL codec x = x `encodeWith` lMap codec
 decodeL :: Codec a -> Int -> a
 decodeL codec x = lRevMap codec M.! x
 
-encode :: Ord a => Codec a -> WordRM a -> WordRM Int
-encode codec (WordRM obvs rs ys) = WordRM obvs' rs' ys'
+encode :: (HasObs w a, Ord a) => Codec a -> w -> X
+encode codec word = fromList $ map (encodeO codec) (obs word)
+
+encodeSent :: (ListLike s w, HasObs w a, Ord a) => Codec a -> s -> Xs
+encodeSent codec = fromList . map (encode codec) . toList
+
+encode' :: (IsWord w a, Ord a) => Codec a -> w -> (X, Y)
+encode' codec word =
+    (fromList obs', fromList choice')
   where
-    obvs' = map encodeO' obvs
-    rs' = map encodeL' rs
-    ys' = [ (encodeL' y, prob)
-          | (y, prob) <- ys ]
-    encodeO' = encodeO codec
-    encodeL' = encodeL codec
+    obs'    = map (encodeO codec) (obs word)
+    choice' = [ (encodeL codec y, prob)
+              | (y, prob) <- choice word ]
 
-encodeSent :: Ord a => Codec a -> SentRM a -> SentRM Int
-encodeSent codec = map $ encode codec
+encodeSent' :: (ListLike s w, IsWord w a, Ord a) => Codec a -> s -> XYs
+encodeSent' codec = fromList . map (encode' codec) . toList
 
-fromWords :: Ord a => [WordRM a] -> Codec a
+fromWords :: (IsWord w a, Ord a) => [w] -> Codec a
 fromWords ws = foldl' update empty ws

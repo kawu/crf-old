@@ -13,7 +13,7 @@ import           Data.CRF.Model (Model, expectedFeaturesIn)
 import           Data.CRF.Model.Internal (featToIx)
 import qualified Data.CRF.Model as CRF
 
-instance SentRM s => DataElem Model s where  
+instance SentM s => DataElem Model s where  
 
     computeGrad params part buffer =
         let ns = concat $ map featuresIn part

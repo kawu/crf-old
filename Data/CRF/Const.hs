@@ -5,11 +5,11 @@ module Data.CRF.Const
 
 import Data.CRF.Types
 
--- TODO: zmiana ponizszych funkcji dla zwiekszenia bezpieczenstwa ?
+-- TODO: zmiana ponizszych funkcji dla zwiekszenia "bezpieczenstwa" ?
 -- unknown: wartosc (obserwacja, pod-tag) nieznana
 unknown :: Label
-unknown = -1
+unknown = -2
 -- dummy: numer etykiety przed pierwszym slowem zdania
 dummy :: Label
-dummy = 0
+dummy = -1
 

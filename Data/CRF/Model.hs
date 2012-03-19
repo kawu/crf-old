@@ -5,17 +5,16 @@ module Data.CRF.Model
 , tag
 -- -- , prob
 -- -- , cll
--- , tag'
 -- , tagProbs
 -- , tagProbs'
 , accuracy
-, accuracy'
+-- , accuracy'
 , expectedFeaturesIn
 , zx
 , zx'
 ) where
 
-import Data.MemoCombinators (memo2, integral)
+-- import Data.MemoCombinators (memo2, integral)
 import qualified Data.Array as Array
 import Data.List (maximumBy)
 import Data.Function (on)
@@ -28,76 +27,82 @@ import Control.Parallel.Strategies ( using, parList, parBuffer, evalList
 import qualified Data.CRF.Control.DynamicProgramming as DP
 import Data.CRF.Util (partition)
 import Data.CRF.LogMath (logSum)
-import Data.CRF.Types
+import Data.CRF.Base
+import Data.CRF.Const (dummy)
 import Data.CRF.Feature
 import Data.CRF.Model.Internal
 
 type LabelIx = Int  -- index of label
-type ProbArray = Int -> LabelIx -> Double
+type ProbArray = Int -> Lb -> Double
 type AccF = [Double] -> Double
+
+(!) :: L.ListLike full item => full -> Int -> item 
+(!) = L.index
 
 -- | Interface on top of internal implementation.
 
-onWord :: Model -> X -> Label -> Double
-onWord crf w x = 
-    sum [onOFeat o x crf | o <- L.toList w]
-
-onTransition :: Model -> Label -> Label -> Double
-onTransition crf x y = onTFeat x y crf
-
-phi :: Model -> X -> Label -> Label -> Double
-phi crf w x y = onWord crf w x + onTransition crf x y
+-- onWord :: Model -> X -> Label -> Double
+-- onWord crf w x = 
+--     sum [onOFeat o x crf | o <- L.toList w]
+-- 
+-- onTransition :: Model -> Label -> Label -> Double
+-- onTransition crf x y = onTFeat x y crf
+-- 
+-- phi :: Model -> X -> Label -> Label -> Double
+-- phi crf w x y = onWord crf w x + onTransition crf x y
 
 -- | More general methods.
 
-computePsiMem :: SentR s => Model -> s -> Int -> LabelIx -> Double
-computePsiMem crf sent i = (Array.!) $
-    Array.array bounds [ (k, psi crf w k)
-                       | k <- interpIxs sent i ]
-    where psi crf w = onWord crf w . interp sent i
-          bounds = (0, interpsNum sent i - 1)
-          w = observationsOn sent i
+-- computePsiMem :: SentR s => Model -> s -> Int -> LabelIx -> Double
+-- computePsiMem crf sent i = (Array.!) $ Array.array bounds
+--     [ (k, psi crf w k)
+--     | k <- interpIxs sent i ]
+--   where
+--     psi crf w = onWord crf w . interp sent i
+--     bounds = (0, interpsNum sent i - 1)
+--     w = observationsOn sent i
 
-forward :: SentR s => AccF -> Model -> s -> ProbArray
+-- | TODO: Change to Vector.
+computePsiMem :: Sent s => Model -> s -> Int -> Lb -> Double
+computePsiMem crf sent i = (Array.!) $ Array.accumArray (+) 0.0 bounds
+    [ (lb, values crf ! ix
+    | ob <- sent `obsOn` i
+    , (lb, ix) <- L.toList $ obIxs crf ! ob ]
+  where
+    bounds = (0, labelNum crf - 1)
+
+forward :: Sent s => AccF -> Model -> s -> ProbArray
 forward acc crf sent = alpha where
     alpha = DP.flexible2 (-1, sentLen sent)
-                (\k   -> (0, interpsNum sent k - 1))
+                (\k   -> (dummy, labelNum crf - 1))
                 (\t k -> withMem (computePsiMem crf sent k) t k)
-    withMem psiMem alpha k i
+    withMem psiMem alpha k x
         | k == -1 = 0.0
         | otherwise = acc
-            [ alpha (k - 1) j + psiMem i
-            + onTransition crf a (b j)
-            | j <- interpIxs sent (k - 1) ]
-      where
-        a = interp sent k       i
-        b = interp sent (k - 1)
+            [ alpha (k - 1) y + psiMem x + values crf ! ix
+            | (y, ix) <- L.toList $ prevIxs crf ! x ]
 
-backward :: SentR s => AccF -> Model -> s -> ProbArray
+backward :: Sent s => AccF -> Model -> s -> ProbArray
 backward acc crf sent = beta where
     beta = DP.flexible2 (0, sentLen sent)
-               (\k   -> (0, interpsNum sent (k - 1) - 1))
+               (\k   -> (dummy, labelNum crf - 1))
                (\t k -> withMem (computePsiMem crf sent k) t k)
-    withMem psiMem beta k i
+    withMem psiMem beta k x
         | k == sentLen sent = 0.0
         | otherwise = acc
-            [ beta (k + 1) j + psiMem j
-            + onTransition crf (b j) a
-            | j <- interpIxs sent k ]
-      where
-        a = interp sent (k - 1) i
-        b = interp sent k
+            [ beta (k + 1) y + psiMem y + values crf ! ix
+            | (y, ix) <- L.toList $ nextIxs crf ! x ]
 
 zxBeta :: ProbArray -> Double
-zxBeta beta = beta 0 0
+zxBeta beta = beta 0 dummy
 
-zxAlpha :: SentR s => s -> ProbArray -> Double
-zxAlpha sent alpha = alpha (sentLen sent) 0
+zxAlpha :: Sent s => s -> ProbArray -> Double
+zxAlpha sent alpha = alpha (sentLen sent) dummy
 
-zx :: SentR s => Model -> s -> Double
+zx :: Sent s => Model -> s -> Double
 zx crf = zxBeta . backward logSum crf
 
-zx' :: SentR s => Model -> s -> Double
+zx' :: Sent s => Model -> s -> Double
 zx' crf sent = zxAlpha sent $ forward logSum crf sent
 
 --------------------------------------------------------------
@@ -107,95 +112,90 @@ argmax f l = foldl1 choice $ map (\x -> (x, f x)) l
               | v1 > v2 = (x1, v1)
               | otherwise = (x2, v2)
 
-memoTag :: SentR s => Model -> s -> [Int]
-memoTag crf sent = snd $ alpha 0 0 where
-    n = sentLen sent
-    alpha = memo2 integral integral alpha' 
-    alpha' i v
-        | i == n = (0, [])
-        | otherwise = maximum [ (phi' i u v, u) `plus` alpha (i + 1) u
-                              | u <- interpIxs sent i ]
-    plus (v, x) (v', xs) = (v + v', x : xs)
-    phi' i u v = phi crf os a b
-        where os = observationsOn sent i
-              a = interp sent i       u
-              b = interp sent (i - 1) v
+-- memoTag :: Sent s => Model -> s -> [Int]
+-- memoTag crf sent = snd $ alpha 0 0 where
+--     n = sentLen sent
+--     alpha = memo2 integral integral alpha' 
+--     alpha' i v
+--         | i == n = (0, [])
+--         | otherwise = maximum [ (phi' i u v, u) `plus` alpha (i + 1) u
+--                               | u <- interpIxs sent i ]
+--     plus (v, x) (v', xs) = (v + v', x : xs)
+--     phi' i u v = phi crf os a b
+--         where os = observationsOn sent i
+--               a = interp sent i       u
+--               b = interp sent (i - 1) v
 
-dynamicTag :: SentR s => Model -> s -> [Int]
+dynamicTag :: Sent s => Model -> s -> [Lb]
 dynamicTag crf sent = collectMaxArg (0, 0) [] mem where
     mem = DP.flexible2 (0, sentLen sent)
-                       (\k   -> (0, interpsNum sent (k - 1) - 1))
+                       (\k   -> (dummy, labelNum crf - 1))
                        (\t k -> withMem (computePsiMem crf sent k) t k)
-    withMem psiMem mem k i
+    withMem psiMem mem k x
         | k == sentLen sent = (-1, 0.0)
-        | otherwise = argmax eval $ interpIxs sent k
-        where eval j =
-                  (snd $ mem (k + 1) j) + psiMem j
-                  + onTransition crf (b j) a
-              a = interp sent (k - 1) i
-              b = interp sent k
-    collectMaxArg (i, j) acc mem = collect $ mem i j
-        where collect (h, _)
-                  | h == -1 = reverse acc
-                  | otherwise = collectMaxArg (i + 1, h) (h:acc) mem
+        | otherwise = argmax eval $ L.toList $ nextIxs crf ! x
+      where
+        eval (y, ix) = (snd $ mem (k + 1) y) + psiMem y + values crf ! ix
+    collectMaxArg (i, j) acc mem =
+        collect $ mem i j
+      where
+        collect (h, _)
+            | h == -1 = reverse acc
+            | otherwise = collectMaxArg (i + 1, h) (h:acc) mem
 
-tag :: SentR s => Model -> s -> [Int]
+tag :: Sent s => Model -> s -> [Lb]
 tag = dynamicTag
 
-tagProbs :: SentR s => Model -> s -> [[Double]]
-tagProbs crf sent =
-    let alpha = forward maximum crf sent
-        beta = backward maximum crf sent
-        normalize vs =
-            let d = - logSum vs
-            in map (+d) vs
-        m1 k x = alpha k x + beta (k + 1) x
-    in  [ map exp $ normalize [m1 i k | k <- interpIxs sent i]
-        | i <- [0 .. sentLen sent - 1] ]
+-- tagProbs :: Sent s => Model -> s -> [[Double]]
+-- tagProbs crf sent =
+--     let alpha = forward maximum crf sent
+--         beta = backward maximum crf sent
+--         normalize vs =
+--             let d = - logSum vs
+--             in map (+d) vs
+--         m1 k x = alpha k x + beta (k + 1) x
+--     in  [ map exp $ normalize [m1 i k | k <- interpIxs sent i]
+--         | i <- [0 .. sentLen sent - 1] ]
+-- 
+-- -- tag probabilities with respect to
+-- -- marginal distributions
+-- tagProbs' :: Sent s => Model -> s -> [[Double]]
+-- tagProbs' crf sent =
+--     let alpha = forward logSum crf sent
+--         beta = backward logSum crf sent
+--     in  [ [ exp $ prob1 crf alpha beta sent i k
+--           | k <- interpIxs sent i ]
+--         | i <- [0 .. sentLen sent - 1] ]
 
--- tag probabilities with respect to
--- marginal distributions
-tagProbs' :: SentR s => Model -> s -> [[Double]]
-tagProbs' crf sent =
-    let alpha = forward logSum crf sent
-        beta = backward logSum crf sent
-    in  [ [ exp $ prob1 crf alpha beta sent i k
-          | k <- interpIxs sent i ]
-        | i <- [0 .. sentLen sent - 1] ]
-
-tag' :: SentR s => Model -> s -> [Label]
-tag' crf sent = map interp' $ zip [0..] $ tag crf sent
-    where interp' (i, k) = interp sent i k
-
-goodAndBad :: SentRM s => Model -> s -> (Int, Int)
+goodAndBad :: SentM s => Model -> s -> (Int, Int)
 goodAndBad crf sent =
     foldl gather (0, 0) $ zip labels labels'
   where
     labels = [ fst $ maximumBy (compare `on` snd)
                    $ L.toList $ choiceOn sent i
              | i <- [0 .. sentLen sent - 1] ]
-    labels' = tag' crf sent
+    labels' = tag crf sent
     gather (good, bad) (x, y)
         | x == y = (good + 1, bad)
         | otherwise = (good, bad + 1)
 
-goodAndBad' :: SentRM s  => Model -> [s] -> (Int, Int)
+goodAndBad' :: SentM s => Model -> [s] -> (Int, Int)
 goodAndBad' crf dataset =
     let add (g, b) (g', b') = (g + g', b + b')
     in  foldl add (0, 0) $ map (goodAndBad crf) dataset
 
-accuracy :: SentRM s => Model -> [s] -> Double
+accuracy :: SentM s => Model -> [s] -> Double
 accuracy crf dataset = fromIntegral good / fromIntegral (good + bad)
     where (good, bad) = goodAndBad' crf dataset
 
--- parallel implementation
-accuracy' :: SentRM s => Int -> Model -> [s] -> Double
-accuracy' k crf dataset =
-    let parts = partition k dataset
-        xs = parMap rseq (goodAndBad' crf) parts
-        (good, bad) = foldl add (0, 0) xs
-        add (g, b) (g', b') = (g + g', b + b')
-    in  fromIntegral good / fromIntegral (good + bad)
+-- -- parallel implementation
+-- accuracy' :: SentRM s => Int -> Model -> [s] -> Double
+-- accuracy' k crf dataset =
+--     let parts = partition k dataset
+--         xs = parMap rseq (goodAndBad' crf) parts
+--         (good, bad) = foldl add (0, 0) xs
+--         add (g, b) (g', b') = (g + g', b + b')
+--     in  fromIntegral good / fromIntegral (good + bad)
 
 -- --------------------------------------------------------------
 
@@ -209,25 +209,20 @@ accuracy' k crf dataset =
 -- cll :: Model -> [Sentence] -> Double
 -- cll crf dataset = sum [prob crf sent | sent <- dataset]
 
-prob2 :: SentR s => Model -> ProbArray -> ProbArray -> s
-      -> Int -> LabelIx -> LabelIx -> Double
-prob2 crf alpha beta sent k x y =
-    alpha (k - 1) y + beta (k + 1) x
-    -- + phi crf (obvs $ word sent k) a b c
-    + phi crf (observationsOn sent k) a b
-    - zxBeta beta
-  where
-    a = interp sent k       x
-    b = interp sent (k - 1) y
+-- prob2 :: SentR s => Model -> ProbArray -> ProbArray -> s
+--       -> Int -> Lb -> Lb -> Double
+-- prob2 crf alpha beta sent k x y
+--     = alpha (k - 1) y + beta (k + 1) x
+--     + phi crf (observationsOn sent k) a b
+--     - zxBeta beta
+--   where
+--     a = interp sent k       x
+--     b = interp sent (k - 1) y
 
--- prob2' :: SentR s => Model -> ProbArray -> ProbArray -> s
---        -> Int -> LabelIx -> LabelIx -> Double
-prob2' crf alpha beta sent k psiMem x y =
-    alpha (k - 1) y + beta (k + 1) x + psiMem x
-    + onTransition crf a b - zxBeta beta
-  where
-    a = interp sent k       x
-    b = interp sent (k - 1) y
+prob2 crf alpha beta sent k psiMem x y ix
+    = alpha (k - 1) y + beta (k + 1) x + psiMem x
+    -- + onTransition crf a b - zxBeta beta
+    + values crf ! ix - zxBeta beta
 
 -- prob1 :: SentR s => Model -> ProbArray -> ProbArray
 --       -> s -> Int -> Label -> Double
@@ -235,28 +230,33 @@ prob2' crf alpha beta sent k psiMem x y =
 --     [ prob2 crf alpha beta sent k x y
 --     | y <- interpIxs sent (k - 1) ]
 
-prob1 :: SentR s => Model -> ProbArray -> ProbArray
-      -> s -> Int -> LabelIx -> Double
+prob1 :: SentR s => Model -> ProbArray -> ProbArray -> s -> Int -> Lb -> Double
 prob1 crf alpha beta sent k x =
     alpha k x + beta (k + 1) x - zxBeta beta
 
 expectedFeaturesOn :: SentR s => Model -> ProbArray -> ProbArray -> s
                    -> Int -> [(Feature, Double)]
 expectedFeaturesOn crf alpha beta sent k =
-    fs2 ++ fs1 -- `using` parList evalElem
+    fs2 ++ fs1
   where
     psiMem = computePsiMem crf sent k
-    pr1 = prob1  crf alpha beta sent k
-    pr2 = prob2' crf alpha beta sent k psiMem
+    pr1 = prob1 crf alpha beta sent k
+    pr2 = prob2 crf alpha beta sent k psiMem
 
     forIx = interp sent k
     forIy = interp sent $ k - 1
 
-    fs1 = [ (OFeature o (forIx x), pr1 x) 
-          | x <- interpIxs sent k
-          , o <- L.toList $ observationsOn sent k ]
-    fs2 = [ (TFeature (forIx x) (forIy y), pr2 x y) 
-          | (x, y) <- interpIxs2 sent k ]
+--     fs1 = [ (OFeature o (forIx x), pr1 x) 
+--           | x <- interpIxs sent k
+--           , o <- L.toList $ observationsOn sent k ]
+    fs1 = [ (OFeature o x, pr1 x) 
+          | o <- sent `obsOn` k
+          , (x, ix) <- L.toList $ obIxs crf ! o ]
+--     fs2 = [ (TFeature (forIx x) (forIy y), pr2 x y) 
+--           | (x, y) <- interpIxs2 sent k ]
+    fs2 = [ (TFeature x y, pr2 x y ix) 
+          | x <- [0 .. labelNum crf - 1]
+          , (y, ix) <- L.toList $ prevIxs crf ! x ]
 
 expectedFeaturesIn :: SentR s => Model -> s -> [(Feature, Double)]
 expectedFeaturesIn crf sent =
@@ -264,11 +264,11 @@ expectedFeaturesIn crf sent =
     zx1 `par` zx2 `pseq` zx1 `pseq` concat
     ( [ expectedFeaturesOn crf alpha beta sent k
       | k <- [0 .. sentLen sent - 1] ]
+      -- TODO: Remove parallel annotation? Does it improve performance?
       -- parallel computation on different positions
       `using` parList (evalList evalElem) )
     where alpha = forward logSum crf sent
           beta = backward logSum crf sent
-          -- zx1 = zxAlpha maximum sent alpha
           zx1 = zxAlpha sent alpha
           zx2 = zxBeta beta
           evalElem = evalTuple2 rseq rseq
