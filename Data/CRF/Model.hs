@@ -26,7 +26,7 @@ import Control.Parallel.Strategies ( using, parList, parBuffer, evalList
 
 import qualified Data.CRF.Control.DynamicProgramming as DP
 import Data.CRF.Util (partition)
-import Data.CRF.LogMath (logSum)
+import Data.CRF.LogMath (logSum, mInf)
 import Data.CRF.Base
 import Data.CRF.Feature
 import Data.CRF.Model.Internal
@@ -127,11 +127,14 @@ zx' :: Sent s => Model -> s -> Double
 zx' crf sent = zxAlpha sent $ forward logSum crf sent
 
 --------------------------------------------------------------
-argmax :: (Ord b) => (a -> b) -> [a] -> (a, b)
-argmax f l = foldl1 choice $ map (\x -> (x, f x)) l
-    where choice (x1, v1) (x2, v2)
-              | v1 > v2 = (x1, v1)
-              | otherwise = (x2, v2)
+argmax :: (Ord b) => (a -> b) -> [a] -> Maybe (a, b)
+argmax f [] = Nothing
+argmax f xs =
+    Just $ foldl1 choice $ map (\x -> (x, f x)) xs
+  where
+    choice (x1, v1) (x2, v2)
+        | v1 > v2 = (x1, v1)
+        | otherwise = (x2, v2)
 
 -- memoTag :: Sent s => Model -> s -> [Int]
 -- memoTag crf sent = snd $ alpha 0 0 where
@@ -184,7 +187,8 @@ dynamicTag crf sent =
                     $ nextIxs crf ! y
       where
         eval (x, ix) = (snd $ mem (k + 1) x) + psiMem x + values crf ! ix
-        prune ((x, ix), v) = (x, v)
+        prune (Just ((x, ix), v)) = (x, v)
+        prune Nothing = (-1, mInf)
 
     collectMaxArg (i, j) acc mem =
         collect $ mem i j
