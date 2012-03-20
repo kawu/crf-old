@@ -28,11 +28,10 @@ import qualified Data.CRF.Control.DynamicProgramming as DP
 import Data.CRF.Util (partition)
 import Data.CRF.LogMath (logSum)
 import Data.CRF.Base
-import Data.CRF.Const (dummy)
 import Data.CRF.Feature
 import Data.CRF.Model.Internal
 
-import Debug.Trace (trace)
+-- import Debug.Trace (trace)
 
 type ProbArray = Int -> Lb -> Double
 type AccF = [Double] -> Double

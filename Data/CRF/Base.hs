@@ -20,8 +20,6 @@ import           Data.ListLike.Vector
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 
-import           Data.CRF.Const (dummy)
-
 type Ob = Int   -- Observation
 type Lb = Int   -- Label
 
@@ -48,6 +46,8 @@ class Sent s => SentM s where
     choiceOn :: s -> Int -> [(Lb, Double)]
     
 
+-- | FIXME: There is no need to check k position.  Change also
+-- Data.CRF.Model (and Internal?) module.
 instance Sent Xs where
     obsOn xs k
         | k < 0 || k >= length xs   = []
@@ -62,7 +62,7 @@ instance Sent XYs where
 
 instance SentM XYs where
     choiceOn xs k
-        | k < 0 || k >= length xs   = undefined -- [(dummy, 1.0)]
+        | k < 0 || k >= length xs   = undefined
         | otherwise                 = toList $ snd $ index xs k
 
 

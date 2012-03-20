@@ -39,11 +39,11 @@ import           Data.CRF.Base
 import           Data.CRF.Feature
 import           Data.CRF.Vector.Binary
 
+import Debug.Trace (trace)
+
 type FeatIx = Int
 type LbIx   = (Lb, FeatIx)
 
--- | TODO: Safe ixs vectors construction.  Now, if labels set is
--- *not* of the [0..lbNum-1] form, everything will crash!
 data Model = Model
     -- | Model values.
     { values    :: U.Vector Double
@@ -109,51 +109,63 @@ instance Binary Model where
 -- no repetition of features in the input list.
 fromList :: [(Feature, Double)] -> Model
 fromList fs =
-    let featLabels (SFeature x) = [x]
-    	featLabels (OFeature _ x) = [x]
-        featLabels (TFeature x y) = [x, y]
+    let featLbs (SFeature x) = [x]
+    	featLbs (OFeature _ x) = [x]
+        featLbs (TFeature x y) = [x, y]
         featObs (OFeature o _) = [o]
         featObs _ = []
 
         ixMap = M.fromList $ zip (map fst fs) [0..]
     
         -- lbNum = (+1) $ maximum $ Set.toList $ Set.fromList
-        --       $ concat $ map featLabels $ map fst fs
-        lbNum = Set.size $ Set.fromList $ concatMap (featLabels . fst) fs
+        --       $ concat $ map featLbs $ map fst fs
+        obSet = nub $ concatMap (featObs . fst) fs
+        lbSet = nub $ concatMap (featLbs . fst) fs
+        lbNum = length lbSet
+        nub   = Set.toList . Set.fromList
 
         sFeats = [feat | (feat, val) <- fs, isSFeat feat]
         tFeats = [feat | (feat, val) <- fs, isTFeat feat]
         oFeats = [feat | (feat, val) <- fs, isOFeat feat]
         
-        sgIxs = L.fromList $ map snd $ sort
+        sgIxs = sgVects lbSet
             [ (x, featToIx crf feat)
             | feat@(SFeature x) <- sFeats ]
 
-        prevIxs = adjVects
+        prevIxs = adjVects lbSet
             [ (x, (y, featToIx crf feat))
             | feat@(TFeature x y) <- tFeats ]
 
-        nextIxs = adjVects
+        nextIxs = adjVects lbSet
             [ (y, (x, featToIx crf feat))
             | feat@(TFeature x y) <- tFeats ]
 
-        obIxs = adjVects
+        obIxs = adjVects obSet
             [ (o, (x, featToIx crf feat))
             | feat@(OFeature o x) <- oFeats ]
 
         -- | Adjacency vectors.
-        adjVects =
-            L.fromList . map mkVect . groupBy ((==) `on` fst) . sort
+        adjVects keys xs =
+            init V.// update
           where
-            mkVect = L.fromList . sort . map snd
+            init = L.replicate (length keys) (L.fromList [])
+            update = map mkVect $ groupBy ((==) `on` fst) $ sort xs
+            mkVect (x:xs) = (fst x, L.fromList $ sort $ map snd (x:xs))
+
+        sgVects keys xs = L.replicate (length keys) 0 U.// xs
 
         values =
             U.replicate (length fs) 0.0
           U.//
             [(featToIx crf feat, val) | (feat, val) <- fs]
 
+        checkSet set cont =
+            if set == [0 .. length set - 1]
+                then cont
+                else error "Internal.fromList: basic assumption not fulfilled"
+
         crf = Model values ixMap lbNum sgIxs obIxs prevIxs nextIxs
-    in  crf
+    in  checkSet lbSet $ checkSet obSet $ crf
 
 mkModel :: [Feature] -> Model
 mkModel fs =

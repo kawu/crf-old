@@ -25,8 +25,8 @@ import qualified Data.Text.Encoding as T
 import           Data.Binary (Binary, put, get)
 import           Data.List (foldl')
 import           Data.ListLike (ListLike, fromList, toList)
+import           Data.Maybe (catMaybes, fromJust)
 
-import qualified Data.CRF.Const as Const
 import           Data.CRF.Base (X, Y, Xs, XYs)
 
 
@@ -45,24 +45,27 @@ instance Binary T.Text where
     get = return . T.decodeUtf8 =<< get
 
 data Codec a = Codec
-    { oMap :: M.Map a Int       -- observations map
-    , lMap :: M.Map a Int       -- labels map
-    , lRevMap :: M.Map Int a }  -- reversed labels map
+    { obMap     :: M.Map a Int      -- observations map
+    , lbMap     :: M.Map a Int      -- labels map
+    , lbMapR    :: M.Map Int a      -- reversed labels map
+    , lbDefault :: a }              -- default label
     deriving (Show)
 
 instance (Ord a, Binary a) => Binary (Codec a) where
     put codec = do
-        put $ oMap codec
-        put $ lMap codec
-        put $ lRevMap codec
+        put $ obMap codec
+        put $ lbMap codec
+        put $ lbMapR codec
+        put $ lbDefault codec
     get = do
-        oMap <- get
-        lMap <- get
-        lRevMap <- get
-        return $ Codec oMap lMap lRevMap
+        obMap <- get
+        lbMap <- get
+        lbMapR <- get
+        lbDefault <- get
+        return $ Codec obMap lbMap lbMapR lbDefault
 
-empty :: Codec a
-empty = Codec M.empty M.empty M.empty
+new :: Ord a => a -> Codec a
+new lbDef = updateL (Codec M.empty M.empty M.empty lbDef) lbDef
 
 updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
 updateMap mp x =
@@ -74,15 +77,15 @@ updateMap mp x =
 
 updateO :: Ord a => Codec a -> a -> Codec a
 updateO codec x =
-    let oMap' = updateMap (oMap codec) x
-    in  oMap' `seq` codec { oMap = oMap' }
+    let obMap' = updateMap (obMap codec) x
+    in  obMap' `seq` codec { obMap = obMap' }
 
 updateL :: Ord a => Codec a -> a -> Codec a
 updateL codec x =
-    let lMap' = updateMap (lMap codec) x
-        lRevMap' = M.insert (lMap' M.! x) x (lRevMap codec)
-    in  lMap' `seq` lRevMap' `seq`
-        Codec (oMap codec) lMap' lRevMap'
+    let lbMap' = updateMap (lbMap codec) x
+        lbMapR' = M.insert (lbMap' M.! x) x (lbMapR codec)
+    in  lbMap' `seq` lbMapR' `seq`
+        codec { lbMap = lbMap', lbMapR = lbMapR' }
 
 update :: (IsWord w a, Ord a) => Codec a -> w -> Codec a
 update codec0 word =
@@ -91,23 +94,17 @@ update codec0 word =
     codec1 = foldl' updateO codec0 (obs word)
     codec2 = foldl' updateL codec1 [y | (y, _) <- choice word]
 
-encodeWith :: Ord a => a -> M.Map a Int -> Int
-encodeWith x mp = case M.lookup x mp of
-    Just k -> k
-    Nothing -> Const.unknown
+encodeO :: Ord a => Codec a -> a -> Maybe Int
+encodeO codec x = x `M.lookup` obMap codec
 
--- | FIXME: Support missing codec keys?
-encodeO :: Ord a => Codec a -> a -> Int
-encodeO codec x = x `encodeWith` oMap codec
-
-encodeL :: Ord a => Codec a -> a -> Int
-encodeL codec x = x `encodeWith` lMap codec
+encodeL :: Ord a => Codec a -> a -> Maybe Int
+encodeL codec x = x `M.lookup` lbMap codec
 
 decodeL :: Codec a -> Int -> a
-decodeL codec x = lRevMap codec M.! x
+decodeL codec x = lbMapR codec M.! x
 
 encode :: (HasObs w a, Ord a) => Codec a -> w -> X
-encode codec word = fromList $ map (encodeO codec) (obs word)
+encode codec word = fromList $ catMaybes $ map (encodeO codec) (obs word)
 
 encodeSent :: (ListLike s w, HasObs w a, Ord a) => Codec a -> s -> Xs
 encodeSent codec = fromList . map (encode codec) . toList
@@ -116,15 +113,18 @@ encode' :: (IsWord w a, Ord a) => Codec a -> w -> (X, Y)
 encode' codec word =
     (fromList obs', fromList choice')
   where
-    obs'    = map (encodeO codec) (obs word)
-    choice' = [ (encodeL codec y, prob)
+    obs'    = catMaybes $ map (encodeO codec) (obs word)
+    choice' = [ (tryEncodeL y, prob)
               | (y, prob) <- choice word ]
+    tryEncodeL = maybe keyDefault id . encodeL codec 
+    keyDefault = fromJust $ encodeL codec $ lbDefault codec
 
 encodeSent' :: (ListLike s w, IsWord w a, Ord a) => Codec a -> s -> XYs
 encodeSent' codec = fromList . map (encode' codec) . toList
 
-fromWords :: (IsWord w a, Ord a) => [w] -> Codec a
-fromWords ws = foldl' update empty ws
+fromWords :: (IsWord w a, Ord a) => a -> [w] -> Codec a
+fromWords lbDef ws = foldl' update (new lbDef) ws
 
-mkCodec :: (ListLike ds s, ListLike s w, IsWord w a, Ord a) => ds -> Codec a
-mkCodec = fromWords . concatMap toList . toList
+mkCodec :: (ListLike ds s, ListLike s w, IsWord w a, Ord a)
+        => a -> ds -> Codec a
+mkCodec lbDef = fromWords lbDef  . concatMap toList . toList
