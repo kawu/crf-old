@@ -1,5 +1,6 @@
 module Data.CRF.Feature
 ( Feature (..)
+, isSFeat
 , isTFeat
 , isOFeat
 , featuresIn
@@ -19,55 +20,63 @@ import Data.CRF.Base
 --   * o is observation corresponding to current position,
 --   * x is label corresponding to current position.
 -- TODO: Annotate as unboxed?
-data Feature = TFeature !Lb !Lb
+data Feature = SFeature !Lb
+             | TFeature !Lb !Lb
              | OFeature !Ob !Lb
 	     deriving (Show, Read, Eq, Ord)
 
 instance Binary Feature where
-    put (TFeature x y) = put (0 :: Int) >> put (x, y)
-    put (OFeature o x) = put (1 :: Int) >> put (o, x)
+    put (SFeature x)   = put (0 :: Int) >> put x
+    put (TFeature x y) = put (1 :: Int) >> put (x, y)
+    put (OFeature o x) = put (2 :: Int) >> put (o, x)
     get = do
         k <- get :: Get Int
-        (a, b) <- (,) <$> get <*> get
-        return $ if k == 0
-            then TFeature a b
-            else OFeature a b
+        case k of
+            0 -> SFeature <$> get
+            1 -> TFeature <$> get <*> get
+            2 -> OFeature <$> get <*> get
+
+isSFeat :: Feature -> Bool
+isSFeat (SFeature _) = True
+isSFeat _            = False
 
 isOFeat :: Feature -> Bool
 isOFeat (OFeature _ _) = True
 isOFeat _              = False
 
 isTFeat :: Feature -> Bool
-isTFeat = not . isOFeat
-
+isTFeat (TFeature _ _) = True
+isTFeat _              = False
 
 -- | Features present in data together with corresponding probabilities.
 --   TODO: consider doing computation in log scale (would have to change
 --   Model.Internal.updateWithNumbers too).
 
-
 -- | Transition features with assigned probabilities for given position.
-transitionFeatures :: SentM s => s -> Int -> [(Feature, Double)]
-transitionFeatures sent k =
+trFeats :: SentM s => s -> Int -> [(Feature, Double)]
+trFeats sent 0 =
+    [ (SFeature x, px)
+    | (x, px) <- choiceOn sent 0 ]
+trFeats sent k =
     [ (TFeature x y, px * py)
     | (x, px) <- choiceOn sent k
     , (y, py) <- choiceOn sent (k - 1) ]
 
 -- | Observation features with assigned probabilities for given position.
-observationFeatures :: SentM s => s -> Int -> [(Feature, Double)]
-observationFeatures sent k =
+obFeats :: SentM s => s -> Int -> [(Feature, Double)]
+obFeats sent k =
     [ (OFeature o x, px)
     | (x, px) <- choiceOn sent k
     , o       <- obsOn sent k ]
 
 -- | All features with assigned probabilities for given position.
 features :: SentM s => s -> Int -> [(Feature, Double)]
-features sent k = transitionFeatures sent k
-               ++ observationFeatures sent k
+features sent k = trFeats sent k ++ obFeats sent k
 
 -- | All features with assigned probabilities in given sentence.
 featuresIn :: SentM s => s -> [(Feature, Double)]
-featuresIn sent = concat $ map (features sent) [0 .. sentLen sent]
+-- featuresIn sent = concat $ map (features sent) [0 .. sentLen sent]
+featuresIn sent = concatMap (features sent) [0 .. sentLen sent - 1]
 
 
 -- -- | Transition features for given position.

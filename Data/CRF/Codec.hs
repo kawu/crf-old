@@ -5,12 +5,18 @@
 
 module Data.CRF.Codec
 ( Codec (..)
+, mkCodec
 , fromWords
+, HasObs (..)
+, HasChoice (..)
+, IsWord (..)
 , encodeO
 , encodeL
 , decodeL
 , encode
+, encode'
 , encodeSent
+, encodeSent'
 ) where
 
 import qualified Data.Map as M
@@ -58,22 +64,22 @@ instance (Ord a, Binary a) => Binary (Codec a) where
 empty :: Codec a
 empty = Codec M.empty M.empty M.empty
 
-updateMap :: Ord a => Int -> M.Map a Int -> a -> M.Map a Int
-updateMap shift mp x =
+updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
+updateMap mp x =
   case M.lookup x mp of
     Just k -> mp
     Nothing -> M.insert x n mp
   where
-    !n = M.size mp + shift
+    !n = M.size mp
 
 updateO :: Ord a => Codec a -> a -> Codec a
 updateO codec x =
-    let oMap' = updateMap 0 (oMap codec) x
+    let oMap' = updateMap (oMap codec) x
     in  oMap' `seq` codec { oMap = oMap' }
 
 updateL :: Ord a => Codec a -> a -> Codec a
 updateL codec x =
-    let lMap' = updateMap 1 (lMap codec) x
+    let lMap' = updateMap (lMap codec) x
         lRevMap' = M.insert (lMap' M.! x) x (lRevMap codec)
     in  lMap' `seq` lRevMap' `seq`
         Codec (oMap codec) lMap' lRevMap'
@@ -90,6 +96,7 @@ encodeWith x mp = case M.lookup x mp of
     Just k -> k
     Nothing -> Const.unknown
 
+-- | FIXME: Support missing codec keys?
 encodeO :: Ord a => Codec a -> a -> Int
 encodeO codec x = x `encodeWith` oMap codec
 
@@ -118,3 +125,6 @@ encodeSent' codec = fromList . map (encode' codec) . toList
 
 fromWords :: (IsWord w a, Ord a) => [w] -> Codec a
 fromWords ws = foldl' update empty ws
+
+mkCodec :: (ListLike ds s, ListLike s w, IsWord w a, Ord a) => ds -> Codec a
+mkCodec = fromWords . concatMap toList . toList

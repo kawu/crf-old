@@ -42,13 +42,17 @@ import           Data.CRF.Vector.Binary
 type FeatIx = Int
 type LbIx   = (Lb, FeatIx)
 
+-- | TODO: Safe ixs vectors construction.  Now, if labels set is
+-- *not* of the [0..lbNum-1] form, everything will crash!
 data Model = Model
     -- | Model values.
     { values    :: U.Vector Double
     -- | Indices map.
     , ixMap     :: M.Map Feature FeatIx
     -- | Number of labels.
-    , labelNum  :: Int
+    , lbNum 	:: Int
+    -- | Singular feature indices.
+    , sgIxs  	:: U.Vector FeatIx
     -- | Set of acceptable labels when known value of the observation.
     , obIxs     :: V.Vector (U.Vector LbIx)
     -- | Set of "previous" labels when known value of the current label.
@@ -72,18 +76,20 @@ instance Binary Model where
     put crf = do
         put $ values crf
         put $ ixMap crf
-        put $ labelNum crf
+        put $ lbNum crf
+        put $ sgIxs crf
         put $ obIxs crf
         put $ prevIxs crf
         put $ nextIxs crf
     get = do
         values <- get
         ixMap <- get
-        labelNum <- get
+        lbNum <- get
+        sgIxs <- get
         obIxs <- get
         prevIxs <- get
         nextIxs <- get
-        return $ Model values ixMap labelNum obIxs prevIxs nextIxs
+        return $ Model values ixMap lbNum sgIxs obIxs prevIxs nextIxs
 
 -- instance Show Model where
 --     show = unlines . map show . toList
@@ -103,19 +109,25 @@ instance Binary Model where
 -- no repetition of features in the input list.
 fromList :: [(Feature, Double)] -> Model
 fromList fs =
-    let featLabels (OFeature _ x) = [x]
+    let featLabels (SFeature x) = [x]
+    	featLabels (OFeature _ x) = [x]
         featLabels (TFeature x y) = [x, y]
         featObs (OFeature o _) = [o]
         featObs _ = []
 
         ixMap = M.fromList $ zip (map fst fs) [0..]
     
-        lmax = maximum $ Set.toList $ Set.fromList
-             $ concat $ map featLabels $ map fst fs
-        omax = maximum $ concat $ map featObs $ map fst fs
+        -- lbNum = (+1) $ maximum $ Set.toList $ Set.fromList
+        --       $ concat $ map featLabels $ map fst fs
+        lbNum = Set.size $ Set.fromList $ concatMap (featLabels . fst) fs
 
+        sFeats = [feat | (feat, val) <- fs, isSFeat feat]
         tFeats = [feat | (feat, val) <- fs, isTFeat feat]
         oFeats = [feat | (feat, val) <- fs, isOFeat feat]
+        
+        sgIxs = L.fromList $ map snd $ sort
+            [ (x, featToIx crf feat)
+            | feat@(SFeature x) <- sFeats ]
 
         prevIxs = adjVects
             [ (x, (y, featToIx crf feat))
@@ -140,7 +152,7 @@ fromList fs =
           U.//
             [(featToIx crf feat, val) | (feat, val) <- fs]
 
-        crf = Model values ixMap (lmax + 1) obIxs prevIxs nextIxs
+        crf = Model values ixMap lbNum sgIxs obIxs prevIxs nextIxs
     in  crf
 
 mkModel :: [Feature] -> Model

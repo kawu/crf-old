@@ -3,13 +3,10 @@ module Data.CRF.Const
 , dummy
 ) where
 
-import Data.CRF.Types
+-- | TODO: Some docs.
+unknown :: Int
+unknown = -2
 
--- TODO: zmiana ponizszych funkcji dla zwiekszenia "bezpieczenstwa" ?
--- unknown: wartosc (obserwacja, pod-tag) nieznana
-unknown :: Label
-unknown = -1
--- dummy: numer etykiety przed pierwszym slowem zdania
-dummy :: Label
-dummy = 0
+dummy :: Int
+dummy = -1
 

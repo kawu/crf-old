@@ -6,15 +6,15 @@ License-file:       LICENSE
 Author:             Jakub Waszczuk
 Maintainer:         waszczuk.kuba@gmail.com
 Build-type:         Simple
-Exposed-modules:    Data.CRF.Model
-                    Data.CRF.Codec
-                    Data.CRF.Feature
-                    Data.CRF.Gradient
-                    Data.CRF.InOut
-                    Data.CRF.XRYs
-                    Data.CRF.Types
-Other-modules:      Data.CRF.Const
+Exposed-modules:    Data.CRF
+Other-modules:      Data.CRF.Model
                     Data.CRF.Model.Internal
+                    Data.CRF.Codec
+                    Data.CRF.Base
+                    Data.CRF.Const
+                    Data.CRF.Feature
+                    Data.CRF.FeatSel
+                    Data.CRF.Gradient
                     Data.CRF.LogMath
                     Data.CRF.Util
                     Data.CRF.Vector.Binary

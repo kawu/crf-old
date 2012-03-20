@@ -62,7 +62,7 @@ instance Sent XYs where
 
 instance SentM XYs where
     choiceOn xs k
-        | k < 0 || k >= length xs   = [(dummy, 1.0)]
+        | k < 0 || k >= length xs   = undefined -- [(dummy, 1.0)]
         | otherwise                 = toList $ snd $ index xs k
 
 
