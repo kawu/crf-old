@@ -5,6 +5,7 @@ module Data.CRF.FeatSel
 , hiddenSFeats
 , present
 , presentTFeats
+, presentOFeats
 ) where
 
 import qualified Data.ListLike as L
@@ -56,7 +57,6 @@ present ds = presentOFeats ds
           ++ presentTFeats ds
           -- ++ hiddenTFeats ds
           ++ hiddenSFeats ds
-
 
 sentLbs :: SentM s => s -> [Lb]
 sentLbs s = concatMap (lbsOn s) [0 .. sentLen s - 1]

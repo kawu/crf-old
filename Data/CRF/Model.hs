@@ -3,35 +3,31 @@
 module Data.CRF.Model
 ( module Data.CRF.Model.Internal
 , tag
--- -- , prob
--- -- , cll
+-- , prob
+-- , cll
 -- , tagProbs
 -- , tagProbs'
 , accuracy
--- , accuracy'
 , expectedFeaturesIn
 , zx
 , zx'
 ) where
 
--- import Data.MemoCombinators (memo2, integral)
-import qualified Data.Array as Array
-import Data.List (maximumBy)
-import Data.Function (on)
+import           Data.List (maximumBy)
+import           Data.Function (on)
 import qualified Data.ListLike as L
+import qualified Data.Array as A
 
-import Control.Parallel (par, pseq)
-import Control.Parallel.Strategies ( using, parList, parBuffer, evalList
-                                   , evalTuple2, rseq, parMap )
+import           Control.Parallel.Strategies (rseq, parMap)
+import           Control.Parallel (par, pseq)
+import           GHC.Conc (numCapabilities)
 
 import qualified Data.CRF.Control.DynamicProgramming as DP
-import Data.CRF.Util (partition)
-import Data.CRF.LogMath (logSum, mInf)
-import Data.CRF.Base
-import Data.CRF.Feature
-import Data.CRF.Model.Internal
-
--- import Debug.Trace (trace)
+import           Data.CRF.Util (partition)
+import           Data.CRF.LogMath (logSum, mInf)
+import           Data.CRF.Base
+import           Data.CRF.Feature
+import           Data.CRF.Model.Internal
 
 type ProbArray = Int -> Lb -> Double
 type AccF = [Double] -> Double
@@ -39,80 +35,64 @@ type AccF = [Double] -> Double
 (!) :: L.ListLike full item => full -> Int -> item 
 (!) = L.index
 
--- | Interface on top of internal implementation.
-
--- onWord :: Model -> X -> Label -> Double
--- onWord crf w x = 
---     sum [onOFeat o x crf | o <- L.toList w]
--- 
--- onTransition :: Model -> Label -> Label -> Double
--- onTransition crf x y = onTFeat x y crf
--- 
--- phi :: Model -> X -> Label -> Label -> Double
--- phi crf w x y = onWord crf w x + onTransition crf x y
-
 -- | More general methods.
 
--- computePsiMem :: SentR s => Model -> s -> Int -> LabelIx -> Double
--- computePsiMem crf sent i = (Array.!) $ Array.array bounds
---     [ (k, psi crf w k)
---     | k <- interpIxs sent i ]
---   where
---     psi crf w = onWord crf w . interp sent i
---     bounds = (0, interpsNum sent i - 1)
---     w = observationsOn sent i
-
--- | TODO: Change to Vector.
-computePsiMem :: Sent s => Model -> s -> Int -> Lb -> Double
-computePsiMem crf sent i = (Array.!) $ Array.accumArray (+) 0.0 bounds
+computePsi :: Sent s => Model -> s -> Int -> Lb -> Double
+computePsi crf sent i = (A.!) $ A.accumArray (+) 0.0 bounds
     [ (lb, values crf ! ix)
-    -- [ (lb, 0.0)
     | ob <- sent `obsOn` i
-    , (lb, ix) <- L.toList $ obIxs crf ! ob ]
+    , (lb, ix) <- obIxs crf ob ]
   where
-    -- | FIXME: Bounds depend on position!
     bounds = (0, lbNum crf - 1)
 
+-- | Forward table computation.
 forward :: Sent s => AccF -> Model -> s -> ProbArray
 forward acc crf sent =
     alpha
   where
     alpha = DP.flexible2 (0, sentLen sent) wordBounds
-                (\t k -> withMem (computePsiMem crf sent k) t k)
+                (\t k -> withMem (computePsi crf sent k) t k)
 
     wordBounds k
         | k == sentLen sent = (0, 0)
         | otherwise = (0, lbNum crf - 1)
 
-    -- | FIXME: null sentence?
-    withMem psiMem alpha k x
-        | k == 0 = psiMem x + values crf ! (sgIxs crf ! x)
+    -- | Forward table equation, where k is current position, x is a label
+    -- on current position and psi is a psi table computed for current
+    -- position.
+    -- FIXME: null sentence?
+    withMem psi alpha k x
+        | k == 0 = psi x + sgValue crf x 
         | k == sentLen sent = acc
             [ alpha (k - 1) y
-            | y <- [0 .. lbNum crf - 1] ]
+            | y <- lbSet crf ]
         | otherwise = acc
-            [ alpha (k - 1) y + psiMem x + values crf ! ix
-            | (y, ix) <- L.toList $ prevIxs crf ! x ]
+            [ alpha (k - 1) y + psi x + values crf ! ix
+            | (y, ix) <- prevIxs crf x ]
 
+-- | Backward table computation.
 backward :: Sent s => AccF -> Model -> s -> ProbArray
 backward acc crf sent =
     beta
   where
     beta = DP.flexible2 (0, sentLen sent) wordBounds
-               (\t k -> withMem (computePsiMem crf sent k) t k)
+               (\t k -> withMem (computePsi crf sent k) t k)
 
     wordBounds k
         | k == 0    = (0, 0)
         | otherwise = (0, lbNum crf - 1)
 
-    withMem psiMem beta k y
+    -- | Backward table equation, where k is current position, y is a label
+    -- on previous, k-1, position and psi is a psi table computed for current
+    -- position.
+    withMem psi beta k y
         | k == sentLen sent = 0.0
         | k == 0    = acc
-            [ beta (k + 1) x + psiMem x + values crf ! ix
-            | (x, ix) <- zip [0..] $ L.toList $ sgIxs crf ]
+            [ beta (k + 1) x + psi x + values crf ! ix
+            | (x, ix) <- sgIxs crf ]
         | otherwise = acc
-            [ beta (k + 1) x + psiMem x + values crf ! ix
-            | (x, ix) <- L.toList $ nextIxs crf ! y ]
+            [ beta (k + 1) x + psi x + values crf ! ix
+            | (x, ix) <- nextIxs crf y ]
 
 zxBeta :: ProbArray -> Double
 zxBeta beta = beta 0 0
@@ -136,44 +116,12 @@ argmax f xs =
         | v1 > v2 = (x1, v1)
         | otherwise = (x2, v2)
 
--- memoTag :: Sent s => Model -> s -> [Int]
--- memoTag crf sent = snd $ alpha 0 0 where
---     n = sentLen sent
---     alpha = memo2 integral integral alpha' 
---     alpha' i v
---         | i == n = (0, [])
---         | otherwise = maximum [ (phi' i u v, u) `plus` alpha (i + 1) u
---                               | u <- interpIxs sent i ]
---     plus (v, x) (v', xs) = (v + v', x : xs)
---     phi' i u v = phi crf os a b
---         where os = observationsOn sent i
---               a = interp sent i       u
---               b = interp sent (i - 1) v
-
--- dynamicTag :: Sent s => Model -> s -> [Lb]
--- dynamicTag crf sent = collectMaxArg (0, 0) [] mem where
---     mem = DP.flexible2 (0, sentLen sent)
---                        (\k   -> (dummy, labelNum crf - 1))
---                        (\t k -> withMem (computePsiMem crf sent k) t k)
---     withMem psiMem mem k x
---         | k == sentLen sent = (-1, 0.0)
---         | otherwise = prune $ argmax eval $ L.toList $ nextIxs crf ! x
---       where
---         eval (y, ix) = (snd $ mem (k + 1) y) + psiMem y + values crf ! ix
---         prune ((y, ix), v) = (y, v)
---     collectMaxArg (i, j) acc mem =
---         collect $ mem i j
---       where
---         collect (h, _)
---             | h == -1 = reverse acc
---             | otherwise = collectMaxArg (i + 1, h) (h:acc) mem
-
 dynamicTag :: Sent s => Model -> s -> [Lb]
 dynamicTag crf sent =
     collectMaxArg (0, 0) [] mem
   where
     mem = DP.flexible2 (0, sentLen sent) wordBounds
-               (\t k -> withMem (computePsiMem crf sent k) t k)
+               (\t k -> withMem (computePsi crf sent k) t k)
 
     wordBounds k
         | k == 0    = (0, 0)
@@ -181,10 +129,8 @@ dynamicTag crf sent =
 
     withMem psiMem mem k y
         | k == sentLen sent = (-1, 0.0)
-        | k == 0    = prune $ argmax eval $ L.toList
-                    $ zip [0..] $ L.toList $ sgIxs crf
-        | otherwise = prune $ argmax eval $ L.toList
-                    $ nextIxs crf ! y
+        | k == 0    = prune $ argmax eval $ sgIxs crf
+        | otherwise = prune $ argmax eval $ nextIxs crf y
       where
         eval (x, ix) = (snd $ mem (k + 1) x) + psiMem x + values crf ! ix
         prune (Just ((x, ix), v)) = (x, v)
@@ -238,18 +184,15 @@ goodAndBad' crf dataset =
     let add (g, b) (g', b') = (g + g', b + b')
     in  foldl add (0, 0) $ map (goodAndBad crf) dataset
 
+-- | Parallel accuracy computation.
 accuracy :: SentM s => Model -> [s] -> Double
-accuracy crf dataset = fromIntegral good / fromIntegral (good + bad)
-    where (good, bad) = goodAndBad' crf dataset
-
--- -- parallel implementation
--- accuracy' :: SentRM s => Int -> Model -> [s] -> Double
--- accuracy' k crf dataset =
---     let parts = partition k dataset
---         xs = parMap rseq (goodAndBad' crf) parts
---         (good, bad) = foldl add (0, 0) xs
---         add (g, b) (g', b') = (g + g', b + b')
---     in  fromIntegral good / fromIntegral (good + bad)
+accuracy crf dataset =
+    let k = numCapabilities
+    	parts = partition k dataset
+        xs = parMap rseq (goodAndBad' crf) parts
+        (good, bad) = foldl add (0, 0) xs
+        add (g, b) (g', b') = (g + g', b + b')
+    in  fromIntegral good / fromIntegral (good + bad)
 
 -- --------------------------------------------------------------
 
@@ -293,35 +236,29 @@ expectedFeaturesOn :: Sent s => Model -> ProbArray -> ProbArray -> s
 expectedFeaturesOn crf alpha beta sent k =
     tFeats ++ oFeats
   where
-    psiMem = computePsiMem crf sent k
+    psiMem = computePsi crf sent k
     pr1 = prob1 crf alpha beta sent k
     pr2 = prob2 crf alpha beta sent k psiMem
 
     oFeats = [ (ix, pr1 x) 
              | o <- sent `obsOn` k
-             , (x, ix) <- L.toList $ obIxs crf ! o ]
+             , (x, ix) <- obIxs crf o ]
 
     tFeats
         | k == 0 = 
             [ (ix, pr1 x) 
-            | (x, ix) <- zip [0..] $ L.toList $ sgIxs crf ]
+            | (x, ix) <- sgIxs crf ]
         | otherwise =
             [ (ix, pr2 x y ix) 
-            | x <- [0 .. lbNum crf - 1]
-            , (y, ix) <- L.toList $ prevIxs crf ! x ]
+            | x <- lbSet crf
+            , (y, ix) <- prevIxs crf x ]
 
 expectedFeaturesIn :: Sent s => Model -> s -> [(FeatIx, Double)]
-expectedFeaturesIn crf sent =
-    -- force parallel computation of alpha and beta tables
-    -- zx1 `par` zx2 `pseq` zx1 `pseq` trace (show (zx1, zx2, zx2-zx1)) $ concat
-    zx1 `par` zx2 `pseq` zx1 `pseq` concat
-    ( [ expectedFeaturesOn crf alpha beta sent k
-      | k <- [0 .. sentLen sent - 1] ]
-      -- TODO: Remove parallel annotation? Does it improve performance?
-      -- parallel computation on different positions
-      `using` parList (evalList evalElem) )
-    where alpha = forward logSum crf sent
-          beta = backward logSum crf sent
-          zx1 = zxAlpha sent alpha
-          zx2 = zxBeta beta
-          evalElem = evalTuple2 rseq rseq
+expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq`
+    concat [expectedOn k | k <- [0 .. sentLen sent - 1] ]
+  where
+    expectedOn = expectedFeaturesOn crf alpha beta sent
+    alpha = forward logSum crf sent
+    beta = backward logSum crf sent
+    zx  = zxAlpha sent alpha
+    zx' = zxBeta beta

@@ -1,28 +1,17 @@
 module Data.CRF.Model.Internal
-( Model (..)
+( FeatIx
+, Model (..)
 -- , fromList
 -- , toList
 , mkModel
+, lbSet
 , featToIx
-, FeatIx
+, sgValue
+, sgIxs
+, obIxs
+, nextIxs
+, prevIxs
 ) where
-
--- import Control.Monad (forM_)
--- import Data.Maybe (fromJust)
--- import Data.Ix (range, inRange, rangeSize)
--- 
--- import qualified Data.Array as A
--- import qualified Data.Array.IO as A
--- import qualified Data.Array.MArray as A
--- import qualified Data.Array.Unboxed as UA
--- import qualified Data.IntMap as IM
--- 
--- import Control.Concurrent (newEmptyMVar, putMVar, takeMVar, forkIO)
--- 
--- 
--- import Data.CRF.Types
--- import Data.CRF.Feature
--- import Data.CRF.LogMath
 
 import           Data.List (groupBy, sort)
 import           Data.Function (on)
@@ -38,8 +27,7 @@ import           SGD
 import           Data.CRF.Base
 import           Data.CRF.Feature
 import           Data.CRF.Vector.Binary
-
-import Debug.Trace (trace)
+import           Data.CRF.LogMath (mInf)
 
 type FeatIx = Int
 type LbIx   = (Lb, FeatIx)
@@ -51,14 +39,15 @@ data Model = Model
     , ixMap     :: M.Map Feature FeatIx
     -- | Number of labels.
     , lbNum 	:: Int
-    -- | Singular feature indices.
-    , sgIxs  	:: U.Vector FeatIx
+    -- | Singular feature indices.  Index is equall to -1 if feature
+    -- is not present in the model.
+    , sgIxsV 	:: U.Vector FeatIx
     -- | Set of acceptable labels when known value of the observation.
-    , obIxs     :: V.Vector (U.Vector LbIx)
+    , obIxsV    :: V.Vector (U.Vector LbIx)
     -- | Set of "previous" labels when known value of the current label.
-    , prevIxs   :: V.Vector (U.Vector LbIx)
+    , prevIxsV  :: V.Vector (U.Vector LbIx)
     -- | Set of "next" labels when known value of the current label.
-    , nextIxs   :: V.Vector (U.Vector LbIx) }
+    , nextIxsV  :: V.Vector (U.Vector LbIx) }
 
 instance ParamCore Model where
 
@@ -77,19 +66,19 @@ instance Binary Model where
         put $ values crf
         put $ ixMap crf
         put $ lbNum crf
-        put $ sgIxs crf
-        put $ obIxs crf
-        put $ prevIxs crf
-        put $ nextIxs crf
+        put $ sgIxsV crf
+        put $ obIxsV crf
+        put $ prevIxsV crf
+        put $ nextIxsV crf
     get = do
         values <- get
         ixMap <- get
         lbNum <- get
-        sgIxs <- get
-        obIxs <- get
-        prevIxs <- get
-        nextIxs <- get
-        return $ Model values ixMap lbNum sgIxs obIxs prevIxs nextIxs
+        sgIxsV <- get
+        obIxsV <- get
+        prevIxsV <- get
+        nextIxsV <- get
+        return $ Model values ixMap lbNum sgIxsV obIxsV prevIxsV nextIxsV
 
 -- instance Show Model where
 --     show = unlines . map show . toList
@@ -117,30 +106,28 @@ fromList fs =
 
         ixMap = M.fromList $ zip (map fst fs) [0..]
     
-        -- lbNum = (+1) $ maximum $ Set.toList $ Set.fromList
-        --       $ concat $ map featLbs $ map fst fs
+        nub   = Set.toList . Set.fromList
         obSet = nub $ concatMap (featObs . fst) fs
         lbSet = nub $ concatMap (featLbs . fst) fs
         lbNum = length lbSet
-        nub   = Set.toList . Set.fromList
 
         sFeats = [feat | (feat, val) <- fs, isSFeat feat]
         tFeats = [feat | (feat, val) <- fs, isTFeat feat]
         oFeats = [feat | (feat, val) <- fs, isOFeat feat]
         
-        sgIxs = sgVects lbSet
+        sgIxsV = sgVects lbSet
             [ (x, featToIx crf feat)
             | feat@(SFeature x) <- sFeats ]
 
-        prevIxs = adjVects lbSet
+        prevIxsV = adjVects lbSet
             [ (x, (y, featToIx crf feat))
             | feat@(TFeature x y) <- tFeats ]
 
-        nextIxs = adjVects lbSet
+        nextIxsV = adjVects lbSet
             [ (y, (x, featToIx crf feat))
             | feat@(TFeature x y) <- tFeats ]
 
-        obIxs = adjVects obSet
+        obIxsV = adjVects obSet
             [ (o, (x, featToIx crf feat))
             | feat@(OFeature o x) <- oFeats ]
 
@@ -152,7 +139,7 @@ fromList fs =
             update = map mkVect $ groupBy ((==) `on` fst) $ sort xs
             mkVect (x:xs) = (fst x, L.fromList $ sort $ map snd (x:xs))
 
-        sgVects keys xs = L.replicate (length keys) 0 U.// xs
+        sgVects keys xs = L.replicate (length keys) (-1) U.// xs
 
         values =
             U.replicate (length fs) 0.0
@@ -164,7 +151,7 @@ fromList fs =
                 then cont
                 else error "Internal.fromList: basic assumption not fulfilled"
 
-        crf = Model values ixMap lbNum sgIxs obIxs prevIxs nextIxs
+        crf = Model values ixMap lbNum sgIxsV obIxsV prevIxsV nextIxsV
     in  checkSet lbSet $ checkSet obSet $ crf
 
 mkModel :: [Feature] -> Model
@@ -174,17 +161,31 @@ mkModel fs =
         vs   = replicate (Set.size fSet) 0.0
     in  fromList (zip fs' vs)
 
+lbSet :: Model -> [Lb]
+lbSet crf = [0 .. lbNum crf - 1]
+
 featToIx :: Model -> Feature -> FeatIx
 featToIx crf feat = ixMap crf M.! feat
 
--- onOFeat :: Obser -> Label -> Model -> Double
--- onOFeat o x crf =
---     case oFeatToIx o x crf of
---         Just ix -> values crf U.! ix
---         Nothing -> 0.0
--- 
--- onTFeat :: Label -> Label -> Model -> Double
--- onTFeat x y crf =
---     case tFeatToIx x y crf of
---         Just ix -> values crf U.! ix
---         Nothing -> 0.0
+sgValue :: Model -> Lb -> Double
+sgValue crf x =
+    case sgIxsV crf U.! x of
+        -1 -> mInf
+        ix -> values crf U.! ix
+
+sgIxs :: Model -> [LbIx]
+{-# INLINE sgIxs #-}
+sgIxs crf = 
+    filter (\(_, ix) -> ix >= 0) $ zip [0..] $ L.toList $ sgIxsV crf
+
+obIxs :: Model -> Ob -> [LbIx]
+{-# INLINE obIxs #-}
+obIxs crf ob = U.toList $ obIxsV crf V.! ob
+
+nextIxs :: Model -> Lb -> [LbIx]
+{-# INLINE nextIxs #-}
+nextIxs crf x = U.toList $ nextIxsV crf V.! x
+
+prevIxs :: Model -> Lb -> [LbIx]
+{-# INLINE prevIxs #-}
+prevIxs crf x = U.toList $ prevIxsV crf V.! x
