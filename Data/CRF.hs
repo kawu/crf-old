@@ -8,7 +8,7 @@ module Data.CRF
 ) where
 
 import Data.CRF.Codec
-import Data.CRF.Model (tag, mkModel, featToIx)
+import Data.CRF.Model (Model, tag, mkModel, featToIx)
 import Data.CRF.Gradient ()
 import Data.CRF.Base
 import Data.CRF.Feature
