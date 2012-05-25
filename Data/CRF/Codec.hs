@@ -1,7 +1,8 @@
 {-# LANGUAGE MultiParamTypeClasses
            , FlexibleInstances
            , UndecidableInstances
-           , FunctionalDependencies #-}
+           , FunctionalDependencies
+	   , BangPatterns #-}
 
 module Data.CRF.Codec
 ( Codec (..)
