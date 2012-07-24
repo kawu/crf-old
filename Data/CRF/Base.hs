@@ -1,58 +1,59 @@
-{-# LANGUAGE FlexibleContexts
-           , FlexibleInstances
-           , TypeSynonymInstances
-           , UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Data.CRF.Base
-( X
-, Y
-, Xs
-, XYs
-, Sent (..)
-, SentM (..)
+( Ob
 , Lb
-, Ob
+, FeatIx
+
+, X (..)
+, Y (..)
+, XY
+
+, Sent
+, sentLen
+, obsOn
+, lbsOn
+, choiceOn
+
+, DataSet
 ) where
 
-import           Prelude hiding (length)
-import           Data.ListLike (toList, length, index)
-import           Data.ListLike.Vector
 import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as U
 
 type Ob = Int   -- Observation
 type Lb = Int   -- Label
 
--- | Vector of observations.
-type X = U.Vector Ob
--- | Vector of labels with corresponding probabilities.
-type Y = U.Vector (Lb, Double)
+-- | Feature index.
+type FeatIx = Int
 
--- | Sentence -- sequence of words.
-type Xs  = V.Vector X
--- | Sentence with chosen interpretations.
-type XYs = V.Vector (X, Y)
+-- | Assumption: list of labels (lbs) is given in an ascending order.
+class X w where
+    obs     :: w -> [Ob]
+    lbs     :: w -> [Lb]
 
+class Y w where
+    choice  :: w -> [(Lb, Double)]
 
--- | Sequence of words: sentence
-class Sent s where
-    -- | Observations on given position.
-    obsOn   :: s -> Int -> [Ob]
-    -- | Sentence length.
-    sentLen :: s -> Int
+class (X w, Y w) => XY w where
+instance (X w, Y w) => XY w where
 
--- | Sentence with chosen labels (each label with corresponding probability).
-class Sent s => SentM s where
-    choiceOn :: s -> Int -> [(Lb, Double)]
-    
+type Sent a = V.Vector a
 
-instance Sent Xs where
-    obsOn xs k = toList $ index xs k
-    sentLen = length
+{-# INLINE sentLen #-}
+sentLen :: Sent w -> Int
+sentLen = V.length
 
-instance Sent XYs where
-    obsOn xs k = toList $ fst $ index xs k
-    sentLen = length
+{-# INLINE obsOn #-}
+obsOn :: X w => Sent w -> Int -> [Ob]
+obsOn sent k = obs (sent V.! k)
 
-instance SentM XYs where
-    choiceOn xs k = toList $ snd $ index xs k
+{-# INLINE lbsOn #-}
+lbsOn :: X w => Sent w -> Int -> [Lb]
+lbsOn sent k = lbs (sent V.! k)
+
+{-# INLINE choiceOn #-}
+choiceOn :: Y w => Sent w -> Int -> [(Lb, Double)]
+choiceOn sent k = choice (sent V.! k)
+
+type DataSet a = V.Vector (Sent a)

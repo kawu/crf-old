@@ -7,11 +7,11 @@ module Data.CRF.Feature
 -- , featuresIn'
 ) where
 
-import qualified Data.ListLike as L
-import           Data.Binary (Binary, Get, put, get)
-import           Control.Applicative ((<*>), (<$>))
+import Data.Binary (Binary, Get, put, get)
+import Control.Applicative ((<*>), (<$>))
 
 import Data.CRF.Base
+import Data.CRF.Model.Conns
 
 -- | TFeature x y:
 --   * x is label corresponding to current position,
@@ -19,10 +19,9 @@ import Data.CRF.Base
 --   OFeature o x:
 --   * o is observation corresponding to current position,
 --   * x is label corresponding to current position.
--- TODO: Annotate as unboxed?
-data Feature = SFeature !Lb
-             | TFeature !Lb !Lb
-             | OFeature !Ob !Lb
+data Feature = SFeature {-# UNPACK #-} !Lb
+             | TFeature {-# UNPACK #-} !Lb {-# UNPACK #-} !Lb
+             | OFeature {-# UNPACK #-} !Ob {-# UNPACK #-} !Lb
 	     deriving (Show, Read, Eq, Ord)
 
 instance Binary Feature where
@@ -53,7 +52,7 @@ isTFeat _              = False
 --   Model.Internal.updateWithNumbers too).
 
 -- | Transition features with assigned probabilities for given position.
-trFeats :: SentM s => s -> Int -> [(Feature, Double)]
+trFeats :: Y w => Sent w -> Int -> [(Feature, Double)]
 trFeats sent 0 =
     [ (SFeature x, px)
     | (x, px) <- choiceOn sent 0 ]
@@ -63,41 +62,41 @@ trFeats sent k =
     , (y, py) <- choiceOn sent (k - 1) ]
 
 -- | Observation features with assigned probabilities for given position.
-obFeats :: SentM s => s -> Int -> [(Feature, Double)]
+obFeats :: XY w => Sent w -> Int -> [(Feature, Double)]
 obFeats sent k =
     [ (OFeature o x, px)
     | (x, px) <- choiceOn sent k
     , o       <- obsOn sent k ]
 
 -- | All features with assigned probabilities for given position.
-features :: SentM s => s -> Int -> [(Feature, Double)]
+features :: XY w => Sent w -> Int -> [(Feature, Double)]
 features sent k = trFeats sent k ++ obFeats sent k
 
 -- | All features with assigned probabilities in given sentence.
-featuresIn :: SentM s => s -> [(Feature, Double)]
--- featuresIn sent = concat $ map (features sent) [0 .. sentLen sent]
+featuresIn :: XY w => Sent w -> [(Feature, Double)]
 featuresIn sent = concatMap (features sent) [0 .. sentLen sent - 1]
 
+trFeats' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
+trFeats' conns sent 0 =
+    [ (SFeature x, fx)
+    | (x, fx) <- intersect (lbsOn sent 0) (sgIxs conns) ]
+trFeats' conns sent k =
+    [ (TFeature x y, fx)
+    | x <- map fst $ intersect (lbsOn sent k) (lbIxs conns)
+    , (y, fx) <- intersect (lbsOn sent (k-1)) (pvIxs conns x) ]
 
--- -- | Transition features for given position.
--- transitionFeatures' :: SentR s => s -> Int -> [Feature]
--- transitionFeatures' sent k =
---     [ TFeature x y
---     | x <- L.toList $ interpsOn sent k
---     , y <- L.toList $ interpsOn sent (k - 1) ]
--- 
--- -- | Observation features for given position.
--- observationFeatures' :: SentR s => s -> Int -> [Feature]
--- observationFeatures' sent k =
---     [ OFeature o x
---     | x <- L.toList $ interpsOn sent k
---     , o <- L.toList $ observationsOn sent k ]
--- 
--- -- | All features for given position.
--- features' :: SentR s => s -> Int -> [Feature]
--- features' sent k = transitionFeatures' sent k
---                 ++ observationFeatures' sent k
--- 
+obFeats' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
+obFeats' conns sent k =
+    [ (OFeature o x, fx)
+    | o       <- obsOn sent k
+    , (x, fx) <- intersect (lbsOn sent k) (obIxs conns o) ]
+
+-- | All features for given position.
+features' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
+features' conns sent k
+    =  trFeats' conns sent k
+    ++ obFeats' conns sent k
+
 -- -- | All features in given sentence.
 -- featuresIn' :: SentR s => s -> [Feature]
 -- featuresIn' sent = concat $ map (features' sent) [0 .. sentLen sent]
