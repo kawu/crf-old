@@ -2,15 +2,10 @@
 
 module Data.CRF.Codec
 ( Codec (..)
--- , mkCodec
--- , fromWords
+, fromWords
 , encodeO
 , encodeL
 , decodeL
--- , encode
--- , encode'
--- , encodeSent
--- , encodeSent'
 ) where
 
 import qualified Data.Map as M
@@ -22,7 +17,7 @@ import           Data.Binary (Binary, put, get)
 import           Data.List (foldl')
 import           Data.Maybe (catMaybes, fromJust)
 
-import Data.CRF.XY
+import Data.CRF.Word
 
 instance Binary T.Text where
     put = put . T.encodeUtf8
@@ -71,7 +66,7 @@ updateL codec x =
     in  lbMap' `seq` lbMapR' `seq`
         codec { lbMap = lbMap', lbMapR = lbMapR' }
 
-update :: Ord a => Codec a -> XY a -> Codec a
+update :: Ord a => Codec a -> Word a -> Codec a
 update codec0 word =
     codec3
   where
@@ -88,5 +83,5 @@ encodeL codec x = x `M.lookup` lbMap codec
 decodeL :: Codec a -> Int -> a
 decodeL codec x = lbMapR codec M.! x
 
-fromWords :: Ord a => a -> [XY a] -> Codec a
+fromWords :: Ord a => a -> [Word a] -> Codec a
 fromWords lbDef ws = foldl' update (new lbDef) ws

@@ -3,78 +3,85 @@ module Data.CRF.FeatSel
 , hiddenOFeats
 , hiddenTFeats
 , hiddenSFeats
--- , presentFeats
--- , presentOFeats
--- , presentTFeats
--- , presentSFeats
+, presentFeats
+, presentOFeats
+, presentTFeats
+, presentSFeats
 ) where
 
 import qualified Data.Set as S
 import qualified Data.Vector as V
 
-import           Data.CRF.Base
-import           Data.CRF.Feature
+import Data.CRF.Base
+import Data.CRF.Word
+import Data.CRF.Feature
 
-hiddenOFeats :: XY w => DataSet w -> [Feature]
-hiddenOFeats ds =
+hiddenOFeats :: ToWord w -> DataSet w -> [Feature]
+hiddenOFeats f ds =
     [OFeature o x | o <- obSet, x <- lbSet]
   where
-    obSet = nub $ concatMap sentObs $ V.toList ds
-    lbSet = nub $ concatMap sentLbs $ V.toList ds
+    obSet = nub $ concatMap (sentObs f) $ V.toList ds
+    lbSet = nub $ concatMap (sentLbs f) $ V.toList ds
 
-hiddenTFeats :: XY w => DataSet w -> [Feature]
-hiddenTFeats ds =
+hiddenTFeats :: ToWord w -> DataSet w -> [Feature]
+hiddenTFeats f ds =
     [TFeature x y | x <- lbSet, y <- lbSet]
   where
-    lbSet = nub $ concatMap sentLbs $ V.toList ds
+    lbSet = nub $ concatMap (sentLbs f) $ V.toList ds
 
-hiddenSFeats :: XY w => DataSet w -> [Feature]
-hiddenSFeats ds =
+hiddenSFeats :: ToWord w -> DataSet w -> [Feature]
+hiddenSFeats f ds =
     [SFeature x | x <- lbSet]
   where
-    lbSet = nub $ concatMap sentLbs $ V.toList ds
+    lbSet = nub $ concatMap (sentLbs f) $ V.toList ds
 
-hiddenFeats ds
-    =  hiddenOFeats ds
-    ++ hiddenTFeats ds
-    ++ hiddenSFeats ds
+hiddenFeats f ds
+    =  hiddenOFeats f ds
+    ++ hiddenTFeats f ds
+    ++ hiddenSFeats f ds
 
-presentOFeats :: XY w => DataSet w -> [Feature]
-presentOFeats ds =
+presentOFeats :: ToWord w -> DataSet w -> [Feature]
+presentOFeats f ds =
     concatMap sentOFeats $ V.toList ds
   where
-    sentOFeats s = concatMap (oFeatsOn s) [0 .. sentLen s - 1]
-    oFeatsOn s k = [OFeature o x | o <- obsOn s k, x <- lbsOnP s k] 
+    sentOFeats s = concatMap (oFeatsOn s) [0 .. V.length s - 1]
+    oFeatsOn s k =
+        [ OFeature o x
+        | o <- (obs.f)  (s V.! k)
+        , x <- (lbsP.f) (s V.! k) ]
 
-presentTFeats :: XY w => DataSet w -> [Feature]
-presentTFeats ds =
+presentTFeats :: ToWord w -> DataSet w -> [Feature]
+presentTFeats f ds =
     concatMap sentTFeats $ V.toList ds
   where
-    sentTFeats s = concatMap (tFeatsOn s) [1 .. sentLen s - 1]
-    tFeatsOn s k = [TFeature x y | x <- lbsOnP s k, y <- lbsOnP s (k-1)] 
+    sentTFeats s = concatMap (tFeatsOn s) [1 .. V.length s - 1]
+    tFeatsOn s k =
+        [ TFeature x y
+        | x <- (lbsP.f) (s V.! k)
+        , y <- (lbsP.f) (s V.! (k-1)) ]
 
-presentSFeats :: XY w => DataSet w -> [Feature]
-presentSFeats ds =
+presentSFeats :: ToWord w -> DataSet w -> [Feature]
+presentSFeats f ds =
     concatMap sentSFeats $ V.toList ds
   where
-    sentSFeats s = [SFeature x | x <- lbsOnP s 0] 
+    sentSFeats s = [SFeature x | x <- (lbsP.f) (s V.! 0)] 
 
-presentFeats ds
-    =  presentOFeats ds
-    ++ presentTFeats ds
-    ++ presentSFeats ds
+presentFeats f ds
+    =  presentOFeats f ds
+    ++ presentTFeats f ds
+    ++ presentSFeats f ds
 
-sentLbs :: XY w => Sent w -> [Lb]
-sentLbs s = concatMap (lbsOnA s) [0 .. sentLen s - 1]
+sentObs :: ToWord w -> Sent w -> [Ob]
+sentObs f s = concatMap (obs.f.(s V.!)) [0 .. V.length s - 1]
 
-sentObs :: XY w => Sent w -> [Ob]
-sentObs s = concatMap (obsOn s) [0 .. sentLen s - 1]
+sentLbs :: ToWord w -> Sent w -> [Lb]
+sentLbs f s = concatMap (lbsA.f.(s V.!)) [0 .. V.length s - 1]
 
-lbsOnP :: XY w => Sent w -> Int -> [Lb]
-lbsOnP s = map fst . choiceOn s
+lbsA :: Word Int -> [Lb]
+lbsA w = lbs w ++ lbsP w
 
-lbsOnA :: XY w => Sent w -> Int -> [Lb]
-lbsOnA s k = lbsOn s k ++ lbsOnP s k 
+lbsP :: Word Int -> [Lb]
+lbsP = map fst . choice
 
 nub :: Ord a => [a] -> [a]
 nub = S.toList . S.fromList

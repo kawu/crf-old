@@ -1,17 +1,18 @@
 module Data.CRF.Feature
 ( Feature (..)
+, ToWord
 , isSFeat
 , isTFeat
 , isOFeat
 , featuresIn
--- , featuresIn'
 ) where
 
 import Data.Binary (Binary, Get, put, get)
 import Control.Applicative ((<*>), (<$>))
+import qualified Data.Vector as V
 
 import Data.CRF.Base
-import Data.CRF.Model.Conns
+import Data.CRF.Word
 
 -- | TFeature x y:
 --   * x is label corresponding to current position,
@@ -52,51 +53,51 @@ isTFeat _              = False
 --   Model.Internal.updateWithNumbers too).
 
 -- | Transition features with assigned probabilities for given position.
-trFeats :: Y w => Sent w -> Int -> [(Feature, Double)]
-trFeats sent 0 =
+trFeats :: ToWord w -> Sent w -> Int -> [(Feature, Double)]
+trFeats f sent 0 =
     [ (SFeature x, px)
-    | (x, px) <- choiceOn sent 0 ]
-trFeats sent k =
+    | (x, px) <- (choice.f) (sent V.! 0) ]
+trFeats f sent k =
     [ (TFeature x y, px * py)
-    | (x, px) <- choiceOn sent k
-    , (y, py) <- choiceOn sent (k - 1) ]
+    | (x, px) <- (choice.f) (sent V.! k)
+    , (y, py) <- (choice.f) (sent V.! (k-1)) ]
 
--- | Observation features with assigned probabilities for given position.
-obFeats :: XY w => Sent w -> Int -> [(Feature, Double)]
-obFeats sent k =
+-- | Observation features with assigned probabilities for a given position.
+obFeats :: ToWord w -> Sent w -> Int -> [(Feature, Double)]
+obFeats f sent k =
     [ (OFeature o x, px)
-    | (x, px) <- choiceOn sent k
-    , o       <- obsOn sent k ]
+    | (x, px) <- (choice.f) (sent V.! k)
+    , o       <- (obs.f)    (sent V.! k) ]
 
 -- | All features with assigned probabilities for given position.
-features :: XY w => Sent w -> Int -> [(Feature, Double)]
-features sent k = trFeats sent k ++ obFeats sent k
+features :: ToWord w -> Sent w -> Int -> [(Feature, Double)]
+features f sent k = trFeats f sent k ++ obFeats f sent k
 
 -- | All features with assigned probabilities in given sentence.
-featuresIn :: XY w => Sent w -> [(Feature, Double)]
-featuresIn sent = concatMap (features sent) [0 .. sentLen sent - 1]
+featuresIn :: ToWord w -> Sent w -> [(Feature, Double)]
+featuresIn f sent = concatMap (features f sent) [0 .. V.length sent - 1]
 
-trFeats' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
-trFeats' conns sent 0 =
-    [ (SFeature x, fx)
-    | (x, fx) <- intersect (lbsOn sent 0) (sgIxs conns) ]
-trFeats' conns sent k =
-    [ (TFeature x y, fx)
-    | x <- map fst $ intersect (lbsOn sent k) (lbIxs conns)
-    , (y, fx) <- intersect (lbsOn sent (k-1)) (pvIxs conns x) ]
+-- trFeats' :: Sent (R, Y) -> Int -> [Feature]
+-- trFeats' sent 0 =
+--     [ SFeature x
+--     | x <- (lbs.fst) (sent V.! 0) ]
+-- trFeats' sent k =
+--     [ TFeature x y
+--     | x <- (lbs.fst) (sent V.! k)
+--     , y <- (lbs.fst) (sent V.! (k-1)) ]
 
-obFeats' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
-obFeats' conns sent k =
-    [ (OFeature o x, fx)
-    | o       <- obsOn sent k
-    , (x, fx) <- intersect (lbsOn sent k) (obIxs conns o) ]
-
--- | All features for given position.
-features' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
-features' conns sent k
-    =  trFeats' conns sent k
-    ++ obFeats' conns sent k
-
+-- obFeats' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
+-- obFeats' conns sent k =
+--     [ (OFeature o x, fx)
+--     | o       <- obsOn sent k
+--     , (x, fx) <- intersect (lbsOn sent k) (obIxs conns o) ]
+-- 
+-- -- | All features for given position.
+-- features' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
+-- features' conns sent k
+--     =  trFeats' conns sent k
+--     ++ obFeats' conns sent k
+-- 
 -- -- | All features in given sentence.
 -- featuresIn' :: SentR s => s -> [Feature]
 -- featuresIn' sent = concat $ map (features' sent) [0 .. sentLen sent]

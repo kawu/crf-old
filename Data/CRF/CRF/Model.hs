@@ -1,6 +1,5 @@
-module Data.CRF.Model.Internal
-( FeatIx
-, Model (..)
+module Data.CRF.CRF.Model
+( Model (..)
 -- , fromList
 -- , toList
 , mkModel
@@ -17,19 +16,17 @@ import           Data.List (groupBy, sort)
 import           Data.Function (on)
 import qualified Data.Set as Set
 import qualified Data.Map as M
-import qualified Data.ListLike as L
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
 import           Data.Binary
+import           Data.Vector.Binary
 
 import           SGD
 
 import           Data.CRF.Base
 import           Data.CRF.Feature
-import           Data.CRF.Vector.Binary
 import           Data.CRF.LogMath (mInf)
 
-type FeatIx = Int
 type LbIx   = (Lb, FeatIx)
 
 data Model = Model
@@ -135,11 +132,11 @@ fromList fs =
         adjVects keys xs =
             init V.// update
           where
-            init = L.replicate (length keys) (L.fromList [])
+            init = V.replicate (length keys) (U.fromList [])
             update = map mkVect $ groupBy ((==) `on` fst) $ sort xs
-            mkVect (x:xs) = (fst x, L.fromList $ sort $ map snd (x:xs))
+            mkVect (x:xs) = (fst x, U.fromList $ sort $ map snd (x:xs))
 
-        sgVects keys xs = L.replicate (length keys) (-1) U.// xs
+        sgVects keys xs = U.replicate (length keys) (-1) U.// xs
 
         values =
             U.replicate (length fs) 0.0
@@ -176,7 +173,7 @@ sgValue crf x =
 sgIxs :: Model -> [LbIx]
 {-# INLINE sgIxs #-}
 sgIxs crf = 
-    filter (\(_, ix) -> ix >= 0) $ zip [0..] $ L.toList $ sgIxsV crf
+    filter (\(_, ix) -> ix >= 0) $ zip [0..] $ U.toList $ sgIxsV crf
 
 obIxs :: Model -> Ob -> [LbIx]
 {-# INLINE obIxs #-}
