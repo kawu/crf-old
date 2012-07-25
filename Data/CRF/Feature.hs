@@ -1,6 +1,5 @@
 module Data.CRF.Feature
 ( Feature (..)
-, ToWord
 , isSFeat
 , isTFeat
 , isOFeat
@@ -76,28 +75,3 @@ features f sent k = trFeats f sent k ++ obFeats f sent k
 -- | All features with assigned probabilities in given sentence.
 featuresIn :: ToWord w -> Sent w -> [(Feature, Double)]
 featuresIn f sent = concatMap (features f sent) [0 .. V.length sent - 1]
-
--- trFeats' :: Sent (R, Y) -> Int -> [Feature]
--- trFeats' sent 0 =
---     [ SFeature x
---     | x <- (lbs.fst) (sent V.! 0) ]
--- trFeats' sent k =
---     [ TFeature x y
---     | x <- (lbs.fst) (sent V.! k)
---     , y <- (lbs.fst) (sent V.! (k-1)) ]
-
--- obFeats' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
--- obFeats' conns sent k =
---     [ (OFeature o x, fx)
---     | o       <- obsOn sent k
---     , (x, fx) <- intersect (lbsOn sent k) (obIxs conns o) ]
--- 
--- -- | All features for given position.
--- features' :: XY w => Conns -> Sent w -> Int -> [(Feature, FeatIx)]
--- features' conns sent k
---     =  trFeats' conns sent k
---     ++ obFeats' conns sent k
--- 
--- -- | All features in given sentence.
--- featuresIn' :: SentR s => s -> [Feature]
--- featuresIn' sent = concat $ map (features' sent) [0 .. sentLen sent]
