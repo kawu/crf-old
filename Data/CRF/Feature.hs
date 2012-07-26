@@ -11,7 +11,7 @@ import Control.Applicative ((<*>), (<$>))
 import qualified Data.Vector as V
 
 import Data.CRF.Base
-import Data.CRF.Word
+import Data.CRF.Y
 
 -- | TFeature x y:
 --   * x is label corresponding to current position,
@@ -52,26 +52,26 @@ isTFeat _              = False
 --   Model.Internal.updateWithNumbers too).
 
 -- | Transition features with assigned probabilities for given position.
-trFeats :: ToWord w -> Sent w -> Int -> [(Feature, Double)]
-trFeats f sent 0 =
+trFeats :: Ys -> Int -> [(Feature, Double)]
+trFeats ys 0 =
     [ (SFeature x, px)
-    | (x, px) <- (choice.f) (sent V.! 0) ]
-trFeats f sent k =
+    | (x, px) <- choice (ys V.! 0) ]
+trFeats ys k =
     [ (TFeature x y, px * py)
-    | (x, px) <- (choice.f) (sent V.! k)
-    , (y, py) <- (choice.f) (sent V.! (k-1)) ]
+    | (x, px) <- choice (ys V.! k)
+    , (y, py) <- choice (ys V.! (k-1)) ]
 
 -- | Observation features with assigned probabilities for a given position.
-obFeats :: ToWord w -> Sent w -> Int -> [(Feature, Double)]
-obFeats f sent k =
+obFeats :: HasObs x => Sent x -> Ys -> Int -> [(Feature, Double)]
+obFeats xs ys k =
     [ (OFeature o x, px)
-    | (x, px) <- (choice.f) (sent V.! k)
-    , o       <- (obs.f)    (sent V.! k) ]
+    | (x, px) <- choice (ys V.! k)
+    , o       <- obs    (xs V.! k) ]
 
 -- | All features with assigned probabilities for given position.
-features :: ToWord w -> Sent w -> Int -> [(Feature, Double)]
-features f sent k = trFeats f sent k ++ obFeats f sent k
+features :: HasObs x => Sent x -> Ys -> Int -> [(Feature, Double)]
+features xs ys k = trFeats ys k ++ obFeats xs ys k
 
 -- | All features with assigned probabilities in given sentence.
-featuresIn :: ToWord w -> Sent w -> [(Feature, Double)]
-featuresIn f sent = concatMap (features f sent) [0 .. V.length sent - 1]
+featuresIn :: HasObs x => Sent x -> Ys -> [(Feature, Double)]
+featuresIn xs ys = concatMap (features xs ys) [0 .. V.length xs - 1]

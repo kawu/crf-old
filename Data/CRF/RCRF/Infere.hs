@@ -1,5 +1,13 @@
 module Data.CRF.RCRF.Infere
-(
+( tag
+-- , prob
+-- , cll
+-- , tagProbs
+-- , tagProbs'
+, accuracy
+, expectedFeaturesIn
+, zx
+, zx'
 ) where
 
 import           Control.Applicative ((<*>), (<$>))

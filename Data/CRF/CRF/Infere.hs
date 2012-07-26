@@ -2,15 +2,15 @@
 
 module Data.CRF.CRF.Infere
 ( module Data.CRF.CRF.Model
--- , tag
--- -- , prob
--- -- , cll
--- -- , tagProbs
--- -- , tagProbs'
--- , accuracy
--- , expectedFeaturesIn
--- , zx
--- , zx'
+, tag
+-- , prob
+-- , cll
+-- , tagProbs
+-- , tagProbs'
+, accuracy
+, expectedFeaturesIn
+, zx
+, zx'
 ) where
 
 import           Data.List (maximumBy)

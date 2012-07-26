@@ -1,22 +1,27 @@
-{-# LANGUAGE MultiParamTypeClasses
-           , FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Data.CRF.Gradient where
 
 import           SGD
 import qualified Data.MarkedArray as MA
 
-import           Data.CRF.Base (SentM)
+import           Data.CRF.Base
+import           Data.CRF.X
+import           Data.CRF.Y
+
 import           Data.CRF.LogMath (logAdd)
 import           Data.CRF.Feature (featuresIn)
-import           Data.CRF.Model (Model, expectedFeaturesIn, featToIx)
-import qualified Data.CRF.Model as CRF
+import           Data.CRF.CRF.Model (Model, featToIx)
+import           Data.CRF.CRF.Infere (expectedFeaturesIn)
+import qualified Data.CRF.CRF.Infere as CRF
 
-instance SentM s => DataElem Model s where  
+instance DataElem Model (Sent X, Sent Y) where  
 
     computeGrad crf part buffer =
-        let ns = concat $ map featuresIn part
-            ens = concat $ map (expectedFeaturesIn crf) part
+        let ns = concatMap (uncurry featuresIn) part
+            ens = concatMap (expectedFeaturesIn crf . fst) part
             followPtrs = map $ \(feat, val) -> (featToIx crf feat, val)
         in do
             gradient <- MA.consumeWith logAdd ens buffer

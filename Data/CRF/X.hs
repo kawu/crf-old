@@ -2,26 +2,34 @@
 
 module Data.CRF.X
 ( X (..)
-, obs
+, Xs
 , encode
+, encodeSent
 ) where
 
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector as V
 import Control.Applicative ((<$>))
 import Data.Maybe (catMaybes)
 
 import qualified Data.CRF.Codec as Codec
 import qualified Data.CRF.Word as Word
-import Data.CRF.Word (Word(Word), ToWord)
+import Data.CRF.Word (Word(Word))
 import Data.CRF.Base
 import Data.CRF.Y
 
 -- | Simple word represented by a list of its observations.
 newtype X = X { unX :: U.Vector Ob }
 
-{-# INLINE obs #-}
-obs :: X -> [Ob]
-obs = U.toList . unX
+type Xs = Sent X
+
+instance HasObs X where
+    {-# INLINE obs #-}
+    obs = U.toList . unX
+
+-- instance HasLbs X where
+--     {-# INLINE lbs #-}
+--     lbs = const []
 
 encode :: Ord a => Codec.Codec a -> Word a -> (X, Y)
 encode codec word =
@@ -33,5 +41,10 @@ encode codec word =
         [ (,pr) <$> Codec.encodeL codec lb
         | (lb, pr) <- Word.choice word ]
 
-toWord :: ToWord (X, Y)
-toWord w = Word (obs (fst w)) [] (choice (snd w))
+encodeSent :: Ord a => Codec.Codec a -> [Word a] -> (Xs, Ys)
+encodeSent codec words =
+    (V.fromList xs, V.fromList ys)
+  where
+    ps = map (encode codec) words
+    xs = map fst ps
+    ys = map snd ps
