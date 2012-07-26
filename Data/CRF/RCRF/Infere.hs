@@ -17,7 +17,7 @@ import qualified Data.Array as A
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 
-import           Control.Parallel.Strategies (rseq, parMap)
+import           Control.Parallel.Strategies (using, rseq, parMap, evalTuple2)
 import           Control.Parallel (par, pseq)
 import           GHC.Conc (numCapabilities)
 
@@ -248,21 +248,22 @@ expectedFeaturesOn crf alpha beta sent k =
 
     oFeats = [ (OFeature o x, p)
              | i <- labelIxs crf sent k
-             , p <- [pr1 i]
-             , x <- [labelOn r i]
+             , let p = pr1 i
+             , let x = labelOn r i
              , o <- obs r ]
 
     tFeats
         | k == 0 = 
             [ (SFeature x, pr1 i)
             | i <- labelIxs crf sent k
-            , x <- [labelOn r  i] ]
+            , let x = labelOn r i ]
         | otherwise =
             [ (TFeature x y, pr2 i j + onTFeat crf x y)
             | i <- labelIxs crf sent k
             , j <- labelIxs crf sent (k-1)
-            , x <- [labelOn r  i]
-            , y <- [labelOn r' j] ]
+            , let x = labelOn r  i
+            , let y = labelOn r' j ]
+    
 
 expectedFeaturesIn :: Model -> Sent R -> [(Feature, Double)]
 expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq`

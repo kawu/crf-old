@@ -1,11 +1,15 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 module Data.CRF.RCRF.Gradient where
 
-import           SGD
+import           Control.Applicative ((<$>))
+import           Data.Maybe (catMaybes)
 import qualified Data.MarkedArray as MA
+
+import           SGD
 
 import           Data.CRF.Base
 import           Data.CRF.R
@@ -20,13 +24,15 @@ import qualified Data.CRF.RCRF.Infere as CRF
 instance DataElem Model (Sent R, Sent Y) where  
 
     computeGrad crf part buffer =
-        let ns = concatMap (uncurry featuresIn) part
-            ens = concatMap (expectedFeaturesIn crf . fst) part
-            followPtrs = map $ \(feat, val) -> (featToIx feat crf, val)
+        let ns  = catMaybes $ map followPtr
+                $ concatMap (uncurry featuresIn) part
+            ens = catMaybes $ map followPtr
+                $ concatMap (expectedFeaturesIn crf . fst) part
+            followPtr (feat, val) = (,val) <$> featToIx feat crf
         in do
-            gradient <- MA.consumeWith logAdd (followPtrs ens) buffer
+            gradient <- MA.consumeWith logAdd ens buffer
                     >>= MA.mapArray (\v -> - exp v) 
-                    >>= MA.consumeWith (+) (followPtrs ns)
+                    >>= MA.consumeWith (+) ns
             return gradient
 
     accuracy = CRF.accuracy 

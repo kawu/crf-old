@@ -142,8 +142,8 @@ mkModel fs =
 lbSet :: Model -> [Lb]
 lbSet crf = [0 .. lbNum crf - 1]
 
-featToIx :: Feature -> Model -> Int
-featToIx feat crf = fromJust $ case feat of
+featToIx :: Feature -> Model -> Maybe Int
+featToIx feat crf = case feat of
     SFeature x   -> sFeatToIx x   crf
     TFeature x y -> tFeatToIx x y crf
     OFeature o x -> oFeatToIx o x crf
