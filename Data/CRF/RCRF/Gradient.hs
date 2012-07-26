@@ -2,7 +2,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Data.CRF.Gradient where
+module Data.CRF.RCRF.Gradient where
 
 import           SGD
 import qualified Data.MarkedArray as MA

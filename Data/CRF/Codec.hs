@@ -9,8 +9,6 @@ module Data.CRF.Codec
 ) where
 
 import qualified Data.Map as M
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
 import           Data.Binary (Binary, put, get)
@@ -18,10 +16,6 @@ import           Data.List (foldl')
 import           Data.Maybe (catMaybes, fromJust)
 
 import Data.CRF.Word
-
-instance Binary T.Text where
-    put = put . T.encodeUtf8
-    get = return . T.decodeUtf8 =<< get
 
 data Codec a = Codec
     { obMap     :: M.Map a Int      -- observations map

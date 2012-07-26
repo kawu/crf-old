@@ -7,26 +7,31 @@ Author:             Jakub Waszczuk
 Maintainer:         waszczuk.kuba@gmail.com
 Build-type:         Simple
 Exposed-modules:    Data.CRF
-Other-modules:      Data.CRF.Model
-                    Data.CRF.Model.Internal
+		    Data.CRF.Base
+		    Data.CRF.X
+		    Data.CRF.R
+		    Data.CRF.Y
                     Data.CRF.Codec
-                    Data.CRF.Base
-                    Data.CRF.Feature
-                    Data.CRF.FeatSel
-                    Data.CRF.Gradient
+		    Data.CRF.Feature
+		    Data.CRF.FeatSel.Present
+		    Data.CRF.FeatSel.Hidden
+		    Data.CRF.CRF.Model
+		    Data.CRF.CRF.Infere
+		    Data.CRF.RCRF.Model
+		    Data.CRF.RCRF.Infere
+Other-modules:      Data.CRF.CRF.Gradient
+                    Data.CRF.RCRF.Gradient
                     Data.CRF.LogMath
                     Data.CRF.Util
-                    Data.CRF.Vector.Binary
                     Data.CRF.Control.DynamicProgramming
 Build-Depends:      base
-                  , primitive
+                  -- , primitive
                   , containers
                   , vector
                   , array
-                  , ListLike
-                  , listlike-instances
                   , random
 		  , parallel
                   , binary
-                  , text
+                  , vector-binary
+                  -- , text
                   , sgd == 0.0.0

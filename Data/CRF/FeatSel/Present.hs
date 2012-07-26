@@ -1,4 +1,4 @@
-module Data.CRF.FeatSet.Present
+module Data.CRF.FeatSel.Present
 ( presentFeats
 , presentOFeats
 , presentTFeats

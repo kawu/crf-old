@@ -1,4 +1,4 @@
-module Data.CRF.FeatSet.Hidden
+module Data.CRF.FeatSel.Hidden
 ( hiddenFeats
 , hiddenOFeats
 , hiddenTFeats
