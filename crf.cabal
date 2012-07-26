@@ -1,5 +1,5 @@
 Name:               crf
-Version:            0.0.0
+Version:            0.0.1
 Synopsis:           Conditional random fields library.
 License:            BSD3
 License-file:       LICENSE
@@ -25,7 +25,6 @@ Other-modules:      Data.CRF.CRF.Gradient
                     Data.CRF.Util
                     Data.CRF.Control.DynamicProgramming
 Build-Depends:      base
-                  -- , primitive
                   , containers
                   , vector
                   , array
@@ -33,5 +32,4 @@ Build-Depends:      base
 		  , parallel
                   , binary
                   , vector-binary
-                  -- , text
                   , sgd == 0.0.0
