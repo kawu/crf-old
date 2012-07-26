@@ -81,6 +81,8 @@ fromList fs =
     featObs (OFeature o _) = [o]
     featObs _ = []
 
+    -- | We need it as a replacement for featToIx, which
+    -- can be used only after a model has been constructed.
     ixMap = M.fromList $ zip (map fst fs) [0..]
     
     nub   = S.toList . S.fromList
@@ -93,15 +95,15 @@ fromList fs =
     tFeats = [feat | (feat, val) <- fs, isTFeat feat]
 
     obIxs = mkOb lbNum
-        [ (x, (o, featToIx feat crf))
+        [ (x, (o, ixMap M.! feat))
         | feat@(OFeature o x) <- oFeats ]
     
     sgIxs = mkSg lbNum
-        [ (x, featToIx feat crf)
+        [ (x, ixMap M.! feat)
         | feat@(SFeature x) <- sFeats ]
 
     trIxs = mkTr lbNum
-        [ ((x, y), featToIx feat crf)
+        [ ((x, y), ixMap M.! feat)
         | feat@(TFeature x y) <- tFeats ]
 
     -- | Adjacency vectors.
@@ -123,7 +125,7 @@ fromList fs =
     values =
         U.replicate (length fs) 0.0
       U.//
-        [(featToIx feat crf, val) | (feat, val) <- fs]
+        [(ixMap M.! feat, val) | (feat, val) <- fs]
 
     checkSet set cont =
         if set == [0 .. length set - 1]

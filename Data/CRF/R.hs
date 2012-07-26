@@ -12,6 +12,8 @@ module Data.CRF.R
 
 , encode
 , encodeSent
+, encode'
+, encodeSent'
 ) where
 
 import qualified Data.Vector.Unboxed as U
@@ -31,6 +33,7 @@ import Data.CRF.X (X(X))
 data R = R
     { unX :: U.Vector Ob
     , unR :: U.Vector Lb }
+    deriving (Show, Read, Eq, Ord)
 
 type Rs = Sent R
 
@@ -65,20 +68,40 @@ toX :: R -> X
 toX (R x _) = X x
 
 encode :: (Ord a, Ord b) => Codec.Codec a b -> Word a b -> (R, Y)
-encode codec word =
-    ( R (U.fromList x) (U.fromList r)
-    , Y (U.fromList y) )
-  where
-    x = catMaybes $ map (Codec.encodeO codec) (Word.obs word)
-    r = catMaybes $ map (Codec.encodeL codec) (Word.lbs word)
-    y = catMaybes
-        [ (,pr) <$> Codec.encodeL codec lb
-        | (lb, pr) <- Word.choice word ]
+encode = encode' (U.fromList [])
 
 encodeSent :: (Ord a, Ord b) => Codec.Codec a b -> [Word a b] -> (Rs, Ys)
-encodeSent codec words =
+encodeSent = encodeSent' (U.fromList [])
+
+-- | Generic way of word encoding: you can specify default restriction vector
+-- for the case when the restriction set is null.  It can be handy when we
+-- want to have some default set of labels (it could be achieved in a more
+-- natural way, but this way is the most efficient one).
+encode' :: (Ord a, Ord b) => U.Vector Lb
+        -> Codec.Codec a b -> Word a b -> (R, Y)
+encode' rNull codec word =
+    ( R (U.fromList x) (mkR r)
+    , Y (U.fromList y) )
+  where
+    mkR [] = rNull
+    mkR r  = U.fromList r
+    x = catMaybes $ map (Codec.encodeO codec) (Word.obs word)
+    -- | FIXME: it can result in unsafe situation, where not (y \subset r).
+    -- It is only important when performing evaluation.
+    -- Perhaps we can just construct codec on top of train and eval?
+    r = catMaybes $ map (Codec.encodeL codec) (Word.lbs word)
+    y = [ (encodeL lb, pr)
+        | (lb, pr) <- Word.choice word ]
+    -- | We choose arbitrary label, when label unknown.
+    -- FIXME: it can result in many 0 labels.
+    encodeL x = maybe 0 id (Codec.encodeL codec x)
+
+encodeSent' :: (Ord a, Ord b) => U.Vector Lb
+            -> Codec.Codec a b
+            -> [Word a b] -> (Rs, Ys)
+encodeSent' rNull codec words =
     (V.fromList rs, V.fromList ys)
   where
-    ps = map (encode codec) words
+    ps = map (encode' rNull codec) words
     rs = map fst ps
     ys = map snd ps

@@ -11,7 +11,7 @@ module Data.RCRF
 import Data.CRF.Base
 import Data.CRF.Feature
 import Data.CRF.Codec
-import Data.CRF.RCRF.Model (Model, mkModel, featToIx)
+import Data.CRF.RCRF.Model (Model, lbSet, mkModel, featToIx)
 import Data.CRF.RCRF.Infere (tag)
 import Data.CRF.RCRF.Gradient ()
 -- import Data.CRF.FeatSel

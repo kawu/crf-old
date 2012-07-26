@@ -2,7 +2,7 @@
 
 module Data.CRF.Codec
 ( Codec (..)
-, fromWords
+, mkCodec
 , encodeO
 , encodeL
 , decodeL
@@ -20,8 +20,7 @@ import Data.CRF.Word
 data Codec a b = Codec
     { obMap     :: M.Map a Int      -- observations map
     , lbMap     :: M.Map b Int      -- labels map
-    , lbMapR    :: M.Map Int b      -- reversed labels map
-    , lbDefault :: b }              -- default label
+    , lbMapR    :: M.Map Int b }    -- reversed labels map
     deriving (Show)
 
 instance (Ord a, Binary a, Ord b, Binary b) => Binary (Codec a b) where
@@ -29,16 +28,14 @@ instance (Ord a, Binary a, Ord b, Binary b) => Binary (Codec a b) where
         put $ obMap codec
         put $ lbMap codec
         put $ lbMapR codec
-        put $ lbDefault codec
     get = do
         obMap <- get
         lbMap <- get
         lbMapR <- get
-        lbDefault <- get
-        return $ Codec obMap lbMap lbMapR lbDefault
+        return $ Codec obMap lbMap lbMapR
 
-new :: Ord b => b -> Codec a b
-new lbDef = updateL (Codec M.empty M.empty M.empty lbDef) lbDef
+new :: Codec a b
+new = Codec M.empty M.empty M.empty
 
 updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
 updateMap mp x =
@@ -77,5 +74,5 @@ encodeL codec x = x `M.lookup` lbMap codec
 decodeL :: Codec a b -> Int -> b
 decodeL codec x = lbMapR codec M.! x
 
-fromWords :: (Ord a, Ord b) => b -> [Word a b] -> Codec a b
-fromWords lbDef ws = foldl' update (new lbDef) ws
+mkCodec :: (Ord a, Ord b) => [Word a b] -> Codec a b
+mkCodec ws = foldl' update new ws

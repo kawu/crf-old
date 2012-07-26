@@ -9,7 +9,7 @@ import qualified Data.Vector.Unboxed as U
 import Data.CRF.Base
 
 -- | Simple word represented by a list of its observations.
-newtype Y = Y { unY :: U.Vector (Lb, Double) }
+newtype Y = Y { unY :: U.Vector (Lb, Double) } deriving (Show, Read, Eq, Ord)
 
 type Ys = Sent Y
 

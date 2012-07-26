@@ -184,13 +184,13 @@ dynamicTag crf sent = collectMaxArg (0, 0) [] mem where
             | h == -1 = reverse acc
             | otherwise = collectMaxArg (i + 1, h) (h:acc) mem
 
-tag :: Model -> Sent R -> [Int]
-tag = dynamicTag
+tag' :: Model -> Sent R -> [Int]
+tag' = dynamicTag
 
-tag' :: Model -> Sent R -> [Lb]
-tag' crf sent =
+tag :: Model -> Sent R -> [Lb]
+tag crf sent =
     let interp' (i, k) = labelOn (sent V.! i) k
-    in  map interp' $ zip [0..] $ tag crf sent
+    in  map interp' $ zip [0..] $ tag' crf sent
 
 goodAndBad :: Model -> Sent R -> Sent Y -> (Int, Int)
 goodAndBad crf sent labels =
@@ -226,10 +226,12 @@ prob1 crf alpha beta sent k i =
     alpha k i + beta (k+1) i - zxBeta beta
 
 -- | NOTE: You have to add onTFeat potential.
+-- TODO: Perhaps readability is more important and onTFeat should
+-- be called here?
 prob2 :: Model -> ProbArray -> ProbArray -> Sent R
       -> Int -> (Int -> Double) -> Int -> Int -> Double
 prob2 crf alpha beta sent k psi i j =
-    alpha (k-1) j + beta (k+1) i + psi i + zxBeta beta
+    alpha (k-1) j + beta (k+1) i + psi i - zxBeta beta
 
 expectedFeaturesOn
     :: Model -> ProbArray -> ProbArray -> Sent R

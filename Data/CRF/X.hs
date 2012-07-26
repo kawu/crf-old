@@ -19,7 +19,7 @@ import Data.CRF.Base
 import Data.CRF.Y
 
 -- | Simple word represented by a list of its observations.
-newtype X = X { unX :: U.Vector Ob }
+newtype X = X { unX :: U.Vector Ob } deriving (Show, Read, Eq, Ord)
 
 type Xs = Sent X
 
@@ -37,9 +37,11 @@ encode codec word =
     , Y (U.fromList y) )
   where
     x = catMaybes $ map (Codec.encodeO codec) (Word.obs word)
-    y = catMaybes
-        [ (,pr) <$> Codec.encodeL codec lb
+    y = [ (encodeL lb, pr)
         | (lb, pr) <- Word.choice word ]
+    -- | We choose arbitrary label, when label unknown.
+    -- FIXME: it can result in many 0 labels.
+    encodeL x = maybe 0 id (Codec.encodeL codec x)
 
 encodeSent :: (Ord a, Ord b) => Codec.Codec a b -> [Word a b] -> (Xs, Ys)
 encodeSent codec words =
