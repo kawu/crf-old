@@ -17,14 +17,14 @@ import           Data.Maybe (catMaybes, fromJust)
 
 import Data.CRF.Word
 
-data Codec a = Codec
+data Codec a b = Codec
     { obMap     :: M.Map a Int      -- observations map
-    , lbMap     :: M.Map a Int      -- labels map
-    , lbMapR    :: M.Map Int a      -- reversed labels map
-    , lbDefault :: a }              -- default label
+    , lbMap     :: M.Map b Int      -- labels map
+    , lbMapR    :: M.Map Int b      -- reversed labels map
+    , lbDefault :: b }              -- default label
     deriving (Show)
 
-instance (Ord a, Binary a) => Binary (Codec a) where
+instance (Ord a, Binary a, Ord b, Binary b) => Binary (Codec a b) where
     put codec = do
         put $ obMap codec
         put $ lbMap codec
@@ -37,7 +37,7 @@ instance (Ord a, Binary a) => Binary (Codec a) where
         lbDefault <- get
         return $ Codec obMap lbMap lbMapR lbDefault
 
-new :: Ord a => a -> Codec a
+new :: Ord b => b -> Codec a b
 new lbDef = updateL (Codec M.empty M.empty M.empty lbDef) lbDef
 
 updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
@@ -48,19 +48,19 @@ updateMap mp x =
   where
     !n = M.size mp
 
-updateO :: Ord a => Codec a -> a -> Codec a
+updateO :: Ord a => Codec a b -> a -> Codec a b
 updateO codec x =
     let obMap' = updateMap (obMap codec) x
     in  obMap' `seq` codec { obMap = obMap' }
 
-updateL :: Ord a => Codec a -> a -> Codec a
+updateL :: Ord b => Codec a b -> b -> Codec a b
 updateL codec x =
     let lbMap' = updateMap (lbMap codec) x
         lbMapR' = M.insert (lbMap' M.! x) x (lbMapR codec)
     in  lbMap' `seq` lbMapR' `seq`
         codec { lbMap = lbMap', lbMapR = lbMapR' }
 
-update :: Ord a => Codec a -> Word a -> Codec a
+update :: (Ord a, Ord b) => Codec a b -> Word a b -> Codec a b
 update codec0 word =
     codec3
   where
@@ -68,14 +68,14 @@ update codec0 word =
     codec2 = foldl' updateL codec1 (lbs word)
     codec3 = foldl' updateL codec2 (map fst $ choice word)
 
-encodeO :: Ord a => Codec a -> a -> Maybe Int
+encodeO :: Ord a => Codec a b -> a -> Maybe Int
 encodeO codec x = x `M.lookup` obMap codec
 
-encodeL :: Ord a => Codec a -> a -> Maybe Int
+encodeL :: Ord b => Codec a b -> b -> Maybe Int
 encodeL codec x = x `M.lookup` lbMap codec
 
-decodeL :: Codec a -> Int -> a
+decodeL :: Codec a b -> Int -> b
 decodeL codec x = lbMapR codec M.! x
 
-fromWords :: Ord a => a -> [Word a] -> Codec a
+fromWords :: (Ord a, Ord b) => b -> [Word a b] -> Codec a b
 fromWords lbDef ws = foldl' update (new lbDef) ws

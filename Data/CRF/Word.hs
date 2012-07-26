@@ -1,11 +1,8 @@
 module Data.CRF.Word
 ( Word (..)
-, ToWord
 ) where
 
-data Word a = Word
+data Word a b = Word
     { obs       :: [a]
-    , lbs       :: [a]
-    , choice    :: [(a, Double)] }
-
-type ToWord w = w -> Word Int
+    , lbs       :: [b]
+    , choice    :: [(b, Double)] }

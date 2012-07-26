@@ -1,5 +1,5 @@
 Name:               crf
-Version:            0.0.1
+Version:            0.0.1.2
 Synopsis:           Conditional random fields library.
 License:            BSD3
 License-file:       LICENSE
@@ -7,7 +7,9 @@ Author:             Jakub Waszczuk
 Maintainer:         waszczuk.kuba@gmail.com
 Build-type:         Simple
 Exposed-modules:    Data.CRF
+		    Data.RCRF
 		    Data.CRF.Base
+		    Data.CRF.Word
 		    Data.CRF.X
 		    Data.CRF.R
 		    Data.CRF.Y

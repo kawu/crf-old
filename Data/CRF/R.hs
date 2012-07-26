@@ -64,7 +64,7 @@ fromX r (X x) = R x r
 toX :: R -> X
 toX (R x _) = X x
 
-encode :: Ord a => Codec.Codec a -> Word a -> (R, Y)
+encode :: (Ord a, Ord b) => Codec.Codec a b -> Word a b -> (R, Y)
 encode codec word =
     ( R (U.fromList x) (U.fromList r)
     , Y (U.fromList y) )
@@ -75,7 +75,7 @@ encode codec word =
         [ (,pr) <$> Codec.encodeL codec lb
         | (lb, pr) <- Word.choice word ]
 
-encodeSent :: Ord a => Codec.Codec a -> [Word a] -> (Rs, Ys)
+encodeSent :: (Ord a, Ord b) => Codec.Codec a b -> [Word a b] -> (Rs, Ys)
 encodeSent codec words =
     (V.fromList rs, V.fromList ys)
   where

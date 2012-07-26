@@ -31,7 +31,7 @@ instance HasObs X where
 --     {-# INLINE lbs #-}
 --     lbs = const []
 
-encode :: Ord a => Codec.Codec a -> Word a -> (X, Y)
+encode :: (Ord a, Ord b) => Codec.Codec a b -> Word a b -> (X, Y)
 encode codec word =
     ( X (U.fromList x)
     , Y (U.fromList y) )
@@ -41,7 +41,7 @@ encode codec word =
         [ (,pr) <$> Codec.encodeL codec lb
         | (lb, pr) <- Word.choice word ]
 
-encodeSent :: Ord a => Codec.Codec a -> [Word a] -> (Xs, Ys)
+encodeSent :: (Ord a, Ord b) => Codec.Codec a b -> [Word a b] -> (Xs, Ys)
 encodeSent codec words =
     (V.fromList xs, V.fromList ys)
   where
