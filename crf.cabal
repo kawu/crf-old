@@ -38,4 +38,4 @@ Build-Depends:      base
 		  , parallel
                   , binary
                   , vector-binary
-                  , sgd == 0.0.*
+                  , sgd == 0.0.0.1
