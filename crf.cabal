@@ -8,6 +8,7 @@ Maintainer:         waszczuk.kuba@gmail.com
 Build-type:         Simple
 Exposed-modules:    Data.CRF
 		    Data.RCRF
+		    Data.RCRF2
 		    Data.CRF.Base
 		    Data.CRF.Word
 		    Data.CRF.X
@@ -21,8 +22,11 @@ Exposed-modules:    Data.CRF
 		    Data.CRF.CRF.Infere
 		    Data.CRF.RCRF.Model
 		    Data.CRF.RCRF.Infere
+		    Data.CRF.RCRF2.Model
+		    Data.CRF.RCRF2.Infere
 Other-modules:      Data.CRF.CRF.Gradient
                     Data.CRF.RCRF.Gradient
+                    Data.CRF.RCRF2.Gradient
                     Data.CRF.LogMath
                     Data.CRF.Util
                     Data.CRF.Control.DynamicProgramming
