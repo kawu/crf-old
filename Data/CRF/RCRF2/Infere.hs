@@ -35,6 +35,9 @@ import           Data.CRF.R
 import           Data.CRF.Y
 import           Data.CRF.Feature
 import           Data.CRF.RCRF2.Model
+import           Data.CRF.RCRF2.Intersect (intersect)
+
+import Debug.Trace (trace)
 
 type ProbArray = Int -> Lb -> Double
 type AccF = [Double] -> Double
@@ -56,19 +59,6 @@ labelIxs sent k = zip [0..] $ (U.toList.unR) (sent V.! k)
 {-# INLINE labelOn #-}
 labelOn :: R -> Int -> Lb
 labelOn r k = unR r U.! k
-
--- | Assumption: labels (in [(Int, Lb)] list) are given in
--- an ascending order.  NOTE: we do not use this assumption
--- right now, but when we change the implementation it can
--- be helpful.
-intersect
-    :: IxMap            -- ^ Map from a label to feature index
-    -> [(Int, Lb)]      -- ^ Label index and the label itself
-    -> [(Int, FeatIx)]  -- ^ Label index and feature index
-intersect ixMap xs = catMaybes
-    -- | Naive implementation for now.
-    [ (k,) <$> IM.lookup x ixMap
-    | (k, x) <- xs ]
 
 -- END Basic definitions.
 
@@ -195,13 +185,15 @@ tag :: Model -> Sent R -> [Lb]
 tag crf = map (fst.head) . (tagK 1 crf)
 
 goodAndBad :: Model -> Sent R -> Sent Y -> (Int, Int)
-goodAndBad crf sent labels =
-    foldl gather (0, 0) $ zip labels' labels''
+goodAndBad crf sent ys =
+    foldl gather (0, 0) $ zip labels labels'
   where
-    labels' = [ fst $ maximumBy (compare `on` snd)
-                    $ choice (labels V.! i)
-              | i <- [0 .. V.length labels - 1] ]
-    labels'' = tag crf sent
+    labels  = [ best $ choice (ys V.! i)
+              | i <- [0 .. V.length ys - 1] ]
+    best xs
+        | null xs   = Nothing
+        | otherwise = Just $ fst $ maximumBy (compare `on` snd) xs
+    labels' = map Just $ tag crf sent
     gather (good, bad) (x, y)
         | x == y = (good + 1, bad)
         | otherwise = (good, bad + 1)
@@ -254,7 +246,7 @@ expectedFeaturesOn crf alpha beta sent i =
             , (l, ix) <- intersect (prevIxs crf V.! x) (labelIxs sent (i-1)) ]
 
 expectedFeaturesIn :: Model -> Sent R -> [(FeatIx, Double)]
-expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq`
+expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq` check `seq` 
     concat [expectedOn i | i <- [0 .. V.length sent - 1] ]
   where
     expectedOn = expectedFeaturesOn crf alpha beta sent
@@ -262,3 +254,13 @@ expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq`
     beta = backward crf sent
     zx  = zxAlpha sent alpha
     zx' = zxBeta beta
+    check 
+        | isNaN zx =
+            error "expectedFeaturesIn: isNaN zx"
+        | isInfinite zx =
+            error "expectedFeaturesIn: isInfinite zx"
+        | (zx-zx') / zx > 1e-10 =
+            error $ "expectedFeaturesIn: difference between zx and zx':\n"
+                 ++ "zx  = " ++ show zx  ++ "\n"
+                 ++ "zx' = " ++ show zx' ++ "\n"
+        | otherwise = ()

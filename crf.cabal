@@ -27,6 +27,7 @@ Exposed-modules:    Data.CRF
 Other-modules:      Data.CRF.CRF.Gradient
                     Data.CRF.RCRF.Gradient
                     Data.CRF.RCRF2.Gradient
+                    Data.CRF.RCRF2.Intersect
                     Data.CRF.LogMath
                     Data.CRF.Util
                     Data.CRF.Control.DynamicProgramming

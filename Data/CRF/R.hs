@@ -1,7 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 
 module Data.CRF.R
-( R (..)
+( R (unX, unR)
 , Rs
 , lbs
 , lbOn
@@ -18,6 +18,7 @@ module Data.CRF.R
 
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
+import qualified Data.Set as S
 import Control.Applicative ((<$>))
 import Data.Maybe (catMaybes)
 
@@ -28,12 +29,18 @@ import Data.CRF.Base
 import Data.CRF.Y
 import Data.CRF.X (X(X))
 
--- | Word with additional constraint on possible labels. We assume, that
--- all chosen labels (see Data.CRF.Y) belong to this set.
+-- | Word with additional constraint on possible labels. Invariants:
+-- * All chosen labels (see Data.CRF.Y) belong to this set.
+-- * Set unR is a distinct and ascending one.
 data R = R
     { unX :: U.Vector Ob
     , unR :: U.Vector Lb }
     deriving (Show, Read, Eq, Ord)
+
+-- | Should we check, if rNull is given in ascending order?
+mkR :: U.Vector Lb -> [Ob] -> [Lb] -> R
+mkR rNull x [] = R (U.fromList x) rNull
+mkR rNull x r  = R (U.fromList x) (U.fromList . S.toList . S.fromList $ r)
 
 type Rs = Sent R
 
@@ -76,25 +83,18 @@ encodeSent = encodeSent' (U.fromList [])
 -- | Generic way of word encoding: you can specify default restriction vector
 -- for the case when the restriction set is null.  It can be handy when we
 -- want to have some default set of labels (it could be achieved in a more
--- natural way, but this way is the most efficient one).
+-- natural way, but this one is more efficient).
 encode' :: (Ord a, Ord b) => U.Vector Lb
         -> Codec.Codec a b -> Word a b -> (R, Y)
 encode' rNull codec word =
-    ( R (U.fromList x) (mkR r)
+    ( mkR rNull x r
     , Y (U.fromList y) )
   where
-    mkR [] = rNull
-    mkR r  = U.fromList r
     x = catMaybes $ map (Codec.encodeO codec) (Word.obs word)
-    -- | FIXME: it can result in unsafe situation, where not (y \subset r).
-    -- It is only important when performing evaluation.
-    -- Perhaps we can just construct codec on top of train and eval?
-    r = catMaybes $ map (Codec.encodeL codec) (Word.lbs word)
-    y = [ (encodeL lb, pr)
+    r = map (Codec.encodeL' codec) (Word.lbs word)
+    y = catMaybes
+        [ (  , pr) <$> Codec.encodeL codec lb
         | (lb, pr) <- Word.choice word ]
-    -- | We choose arbitrary label, when label unknown.
-    -- FIXME: it can result in many 0 labels.
-    encodeL x = maybe 0 id (Codec.encodeL codec x)
 
 encodeSent' :: (Ord a, Ord b) => U.Vector Lb
             -> Codec.Codec a b

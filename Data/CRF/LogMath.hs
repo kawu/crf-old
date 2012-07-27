@@ -9,7 +9,7 @@ module Data.CRF.LogMath
 , mInf
 ) where
 
-import Data.List (foldl')
+import Data.List (foldl', sort)
 
 foreign import ccall unsafe "math.h log1p"
     log1p :: Double -> Double
@@ -36,4 +36,4 @@ logSub :: Double -> Double -> Double
 logSub x y = x + log1p (negate (exp (y - x)))
 
 logSum :: [Double] -> Double
-logSum l = foldl' logAdd mInf l
+logSum = foldl' logAdd mInf . sort

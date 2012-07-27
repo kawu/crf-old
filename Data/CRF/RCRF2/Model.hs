@@ -1,7 +1,7 @@
 module Data.CRF.RCRF2.Model
 ( Model (..)
 , mkModel
-, lbSet
+-- , lbSet
 , featToIx
 , IxMap
 , sgValue
@@ -43,7 +43,7 @@ data Model = Model
     , lbNum 	:: Int
     -- | Singular feature indices.  Index is equall to -1 if feature
     -- is not present in the model.
-    , sgIxs :: U.Vector FeatIx
+    , sgIxs     :: U.Vector FeatIx
     -- , sgIxs     :: IxMap
     -- | Set of acceptable labels when known value of the observation.
     -- , obIxs    :: V.Vector (U.Vector LbIx)
@@ -150,9 +150,9 @@ mkModel lbNum fs =
         vs   = replicate (Set.size fSet) 0.0
     in  fromList lbNum (zip fs' vs)
 
-{-# INLINE lbSet #-}
-lbSet :: Model -> [Lb]
-lbSet crf = [0 .. lbNum crf - 1]
+-- {-# INLINE lbSet #-}
+-- lbSet :: Model -> [Lb]
+-- lbSet crf = [0 .. lbNum crf - 1]
 
 {-# INLINE featToIx #-}
 featToIx :: Model -> Feature -> Maybe FeatIx
