@@ -12,6 +12,6 @@ import Data.CRF.Base
 import Data.CRF.Feature
 import Data.CRF.Codec
 import Data.CRF.RCRF2.Model (Model, mkModel, featToIx)
-import Data.CRF.RCRF2.Infere (tag)
+import Data.CRF.RCRF2.Infere (tag, tagK, tagProbs)
 import Data.CRF.RCRF2.Gradient ()
 -- import Data.CRF.FeatSel

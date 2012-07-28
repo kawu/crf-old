@@ -3,6 +3,8 @@
 
 module Data.CRF.RCRF2.Infere
 ( tag
+, tagK
+, tagProbs
 -- , prob
 -- , cll
 -- , tagProbs
@@ -263,7 +265,7 @@ expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq` check `seq`
             error "expectedFeaturesIn: isNaN zx"
         | isInfinite zx =
             error "expectedFeaturesIn: isInfinite zx"
-        | (zx-zx') / zx > 1e-10 =
+        | (zx-zx') / zx > 1e-8 =
             error $ "expectedFeaturesIn: difference between zx and zx':\n"
                  ++ "zx  = " ++ show zx  ++ "\n"
                  ++ "zx' = " ++ show zx' ++ "\n"
