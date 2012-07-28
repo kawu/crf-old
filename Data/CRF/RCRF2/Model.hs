@@ -3,7 +3,7 @@ module Data.CRF.RCRF2.Model
 , mkModel
 -- , lbSet
 , featToIx
-, IxMap
+, IxVect
 , sgValue
 -- , sgIxs
 -- , obIxs
@@ -16,7 +16,7 @@ import           Data.List (groupBy, sort)
 import           Data.Function (on)
 import qualified Data.Set as Set
 import qualified Data.Map as M
-import qualified Data.IntMap as IM
+-- import qualified Data.IntMap as IM
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector as V
 import           Data.Binary
@@ -31,8 +31,9 @@ import           Data.CRF.LogMath (mInf)
 noKey :: Int
 noKey = -1
 
--- type LbIx  = (Lb, FeatIx)
-type IxMap = IM.IntMap FeatIx
+-- | List of (label, feature index) pairs.
+type IxVect = U.Vector LbIx
+type LbIx   = (Lb, FeatIx)
 
 data Model = Model
     -- | Model values.
@@ -44,14 +45,12 @@ data Model = Model
     -- | Singular feature indices.  Index is equall to -1 if feature
     -- is not present in the model.
     , sgIxs     :: U.Vector FeatIx
-    -- , sgIxs     :: IxMap
     -- | Set of acceptable labels when known value of the observation.
-    -- , obIxs    :: V.Vector (U.Vector LbIx)
-    , obIxs     :: V.Vector IxMap
+    , obIxs     :: V.Vector IxVect
     -- | Set of "previous" labels when known value of the current label.
-    , prevIxs   :: V.Vector IxMap
+    , prevIxs   :: V.Vector IxVect
     -- | Set of "next" labels when known value of the current label.
-    , nextIxs   :: V.Vector IxMap }
+    , nextIxs   :: V.Vector IxVect }
 
 instance ParamCore Model where
 
@@ -124,9 +123,9 @@ fromList lbNum fs =
         adjVects n xs =
             init V.// update
           where
-            init = V.replicate n IM.empty
+            init = V.replicate n (U.fromList [])
             update = map mkVect $ groupBy ((==) `on` fst) $ sort xs
-            mkVect (x:xs) = (fst x, IM.fromList $ map snd (x:xs))
+            mkVect (x:xs) = (fst x, U.fromList $ sort $ map snd (x:xs))
 
         values =
             U.replicate (length fs) 0.0

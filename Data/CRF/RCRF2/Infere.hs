@@ -48,9 +48,13 @@ type AccF = [Double] -> Double
 lbsNum :: Sent R -> Int -> Int
 lbsNum sent k = (U.length.unR) (sent V.! k)
 
+{-# INLINE labels #-}
+labels :: Sent R -> Int -> U.Vector Lb
+labels sent k = unR (sent V.! k)
+
 {-# INLINE labelIxs #-}
 labelIxs :: Sent R -> Int -> [(Int, Lb)]
-labelIxs sent k = zip [0..] $ (U.toList.unR) (sent V.! k)
+labelIxs sent k = zip [0..] $ U.toList $ labels sent k
 
 -- {-# INLINE labelIxs' #-}
 -- labelIxs' :: Sent R -> Int -> [Int]
@@ -75,7 +79,7 @@ computePsi crf sent i = (A.!) arr
     arr = A.accumArray (+) 0.0 bounds
         [ (k, val U.! ix)
         | ob <- obs (sent V.! i)
-        , (k, ix) <- intersect (obIxs crf V.! ob) (labelIxs sent i) ]
+        , (k, ix) <- intersect (obIxs crf V.! ob) (labels sent i) ]
 
 -- | Forward table computation.
 forward :: Model -> Sent R -> ProbArray
@@ -99,10 +103,10 @@ forward crf sent = alpha where
             | (k, _) <- labelIxs sent (i-1) ]
         v x = logSum
             [ alpha (i-1) k
-            | (k, _) <- intersect (prevIxs crf V.! x) (labelIxs sent (i-1)) ]
+            | (k, _) <- intersect (prevIxs crf V.! x) (labels sent (i-1)) ]
         w x = logSum
             [ alpha (i-1) k + values crf U.! ix
-            | (k, ix) <- intersect (prevIxs crf V.! x) (labelIxs sent (i-1)) ]
+            | (k, ix) <- intersect (prevIxs crf V.! x) (labels sent (i-1)) ]
 
 backward :: Model -> Sent R -> ProbArray
 backward crf sent = beta where
@@ -126,10 +130,10 @@ backward crf sent = beta where
             | (k, _ ) <- labelIxs sent i ]
         v y = logSum
             [ beta (i+1) k + psi k
-            | (k, _ ) <- intersect (nextIxs crf V.! y) (labelIxs sent i) ]
+            | (k, _ ) <- intersect (nextIxs crf V.! y) (labels sent i) ]
         w y = logSum
             [ beta (i+1) k + psi k + values crf U.! ix
-            | (k, ix) <- intersect (nextIxs crf V.! y) (labelIxs sent i) ]
+            | (k, ix) <- intersect (nextIxs crf V.! y) (labels sent i) ]
 
 
 zxBeta :: ProbArray -> Double
@@ -234,7 +238,7 @@ expectedFeaturesOn crf alpha beta sent i =
 
     oFeats = [ (ix, pr1 k) 
              | o <- obs (sent V.! i)
-             , (k, ix) <- intersect (obIxs crf V.! o) (labelIxs sent i) ]
+             , (k, ix) <- intersect (obIxs crf V.! o) (labels sent i) ]
 
     tFeats
         | i == 0 = catMaybes
@@ -243,7 +247,7 @@ expectedFeaturesOn crf alpha beta sent i =
         | otherwise =
             [ (ix, pr2 k l ix)
             | (k,  x) <- labelIxs sent i
-            , (l, ix) <- intersect (prevIxs crf V.! x) (labelIxs sent (i-1)) ]
+            , (l, ix) <- intersect (prevIxs crf V.! x) (labels sent (i-1)) ]
 
 expectedFeaturesIn :: Model -> Sent R -> [(FeatIx, Double)]
 expectedFeaturesIn crf sent = zx `par` zx' `pseq` zx `pseq` check `seq` 
