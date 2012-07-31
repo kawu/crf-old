@@ -2,6 +2,9 @@
 
 module Data.CRF.Codec
 ( Codec (..)
+, lbNum
+, obNum
+, size
 , mkCodec
 , encodeO
 , encodeL
@@ -9,6 +12,7 @@ module Data.CRF.Codec
 , decodeL
 ) where
 
+import Control.Applicative ((<$>), (<*>))
 import qualified Data.Map as M
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
@@ -43,6 +47,15 @@ instance (Ord a, Binary a, Ord b, Binary b) => Binary (Codec a b) where
 
 new :: Ord b => b -> Codec a b
 new lbDef = updateL (Codec M.empty M.empty M.empty lbDef) lbDef
+
+lbNum :: Codec a b -> Int
+lbNum = M.size . lbMap
+
+obNum :: Codec a b -> Int
+obNum = M.size . obMap
+
+size :: Codec a b -> Int
+size = (+) <$> lbNum <*> obNum
 
 updateMap :: Ord a => M.Map a Int -> a -> M.Map a Int
 updateMap mp x =
